@@ -1,0 +1,14 @@
+{
+  "name": "cohort-14-backend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Cohort 14 platform back-end database and migrations",
+  "type": "module",
+  "scripts": {
+    "migrate": "node src/db/migrate.js",
+    "verify-schema": "node scripts/verify-schema.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}
