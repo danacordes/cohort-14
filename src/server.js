@@ -7,6 +7,7 @@ import { expressMiddleware } from '@as-integrations/express5';
 import { GraphQLError } from 'graphql';
 import { typeDefs, resolvers } from './graphql/schema.js';
 import authRouter from './routes/auth.js';
+import { authMiddleware } from './middleware/auth.js';
 
 const isDev = process.env.NODE_ENV !== 'production';
 const PORT = process.env.PORT ?? 4000;
@@ -69,8 +70,9 @@ app.use(
   '/graphql',
   cors(corsOptions),
   express.json(),
+  authMiddleware,
   expressMiddleware(apollo, {
-    context: async ({ req }) => ({ req }),
+    context: async ({ req }) => ({ user: req.user }),
   }),
 );
 
