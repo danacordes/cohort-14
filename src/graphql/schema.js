@@ -72,6 +72,36 @@ export const typeDefs = `#graphql
     storageKey: String!
   }
 
+  # ─── SLA Config ───────────────────────────────────────────────────────────
+
+  type SLAPolicy {
+    id: ID!
+    priority: TicketPriorityEnum!
+    responseTimeHours: Int!
+    resolutionTimeHours: Int!
+    effectiveFrom: String!
+    createdBy: String!
+    createdAt: String!
+  }
+
+  type SLAPolicyConfig {
+    policies: [SLAPolicy!]!
+    escalationThresholdPercent: Int!
+    unassignedEscalationThresholdHours: Int!
+  }
+
+  input SLAPolicyInput {
+    priority: TicketPriorityEnum!
+    responseTimeHours: Int!
+    resolutionTimeHours: Int!
+  }
+
+  input SLAPolicyConfigInput {
+    policies: [SLAPolicyInput!]
+    escalationThresholdPercent: Int
+    unassignedEscalationThresholdHours: Int
+  }
+
   # ─── Comments ─────────────────────────────────────────────────────────────
 
   type TicketComment {
@@ -156,6 +186,9 @@ export const typeDefs = `#graphql
     slaResolutionDueAt: String
     slaPausedAt: String
     slaStatus: SLAStatusEnum
+    slaRespondedAt: String
+    slaResponseBreachedAt: String
+    slaResolutionBreachedAt: String
     resolvedAt: String
     autoCloseAt: String
     closedAt: String
@@ -223,6 +256,7 @@ export const typeDefs = `#graphql
     ticketComments(ticketId: ID!): [TicketComment!]!
     closureConfig: ClosureConfig!
     holidays: [Holiday!]!
+    slaConfig: SLAPolicyConfig!
   }
 
   # ─── Mutations ────────────────────────────────────────────────────────────
@@ -257,6 +291,8 @@ export const typeDefs = `#graphql
     updateClosureConfig(autoCloseBusinessDays: Int!): ClosureConfig!
     addHoliday(date: String!, label: String!): Holiday!
     removeHoliday(id: ID!): Boolean!
+
+    updateSLAConfig(input: SLAPolicyConfigInput!): SLAPolicyConfig!
   }
 `;
 

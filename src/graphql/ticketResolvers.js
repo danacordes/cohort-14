@@ -9,7 +9,16 @@ import {
   pauseSLA,
   resumeSLA,
   getSLAStatus,
+  stampRespondedAt,
+  checkAndStampBreaches,
 } from '../services/slaService.js';
+import {
+  getPolicies,
+  getPolicyForPriority,
+  upsertPolicy,
+  getGlobalConfig,
+  updateGlobalConfig,
+} from '../services/slaConfigService.js';
 import {
   listCategories,
   listAllCategories,
@@ -105,6 +114,9 @@ function mapTicket(row) {
     slaResolutionDueAt: row.sla_resolution_due_at ?? null,
     slaPausedAt: row.sla_paused_at ?? null,
     slaStatus: getSLAStatus({ ...row, _priorityCode: row.priority_code }),
+    slaRespondedAt: row.sla_responded_at ?? null,
+    slaResponseBreachedAt: row.sla_response_breached_at ?? null,
+    slaResolutionBreachedAt: row.sla_resolution_breached_at ?? null,
     resolvedAt: row.resolved_at ?? null,
     autoCloseAt: row.auto_close_at ?? null,
     closedAt: row.closed_at ?? null,
@@ -137,6 +149,18 @@ function mapAttachment(row) {
     storageKey: row.storage_key,
     uploadedBy: row.uploaded_by,
     uploadedAt: row.uploaded_at,
+  };
+}
+
+function mapSLAPolicy(row) {
+  return {
+    id: row.id,
+    priority: row.priority,
+    responseTimeHours: row.response_time_hours,
+    resolutionTimeHours: row.resolution_time_hours,
+    effectiveFrom: row.effective_from,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
   };
 }
 
@@ -350,6 +374,18 @@ const Query = {
       id: h.id, date: h.date, label: h.label, createdBy: h.created_by, createdAt: h.created_at,
     }));
   },
+
+  slaConfig(_parent, _args, { user }) {
+    requireRole(user, 'admin');
+    const db = getReadDb();
+    const policies = getPolicies(db).map(mapSLAPolicy);
+    const global = getGlobalConfig(db);
+    return {
+      policies,
+      escalationThresholdPercent: global?.escalation_threshold_percent ?? 80,
+      unassignedEscalationThresholdHours: global?.unassigned_escalation_threshold_hours ?? 4,
+    };
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -372,7 +408,8 @@ const Mutation = {
     const id = randomUUID();
     const statusId = statusIdByCode(db, 'OPEN');
     const priorityId = priorityIdByCode(db, priority);
-    const { responseDue, resolutionDue } = computeDueDates(priority);
+    const slaPolicy = getPolicyForPriority(db, priority);
+    const { responseDue, resolutionDue } = computeDueDates(priority, new Date(), slaPolicy);
 
     db.exec('BEGIN IMMEDIATE');
     try {
@@ -468,6 +505,8 @@ const Mutation = {
     if (ticket.status_code === 'PENDING_USER_RESPONSE' && status !== 'PENDING_USER_RESPONSE') {
       resumeSLA(db, id, now);
     }
+    if (status === 'IN_PROGRESS') stampRespondedAt(db, id, now);
+    checkAndStampBreaches(db, id, now);
 
     audit(db, {
       entityType: 'Ticket',
@@ -491,17 +530,29 @@ const Mutation = {
     }
 
     const priorityId = priorityIdByCode(db, priority);
-    const { responseDue, resolutionDue } = recalculateDueDates(
-      priority,
-      ticket.created_at,
-      ticket.sla_paused_at,
-    );
+    const now = new Date();
+
+    // Capture prior SLA state before reset for the audit trail (ADR-001)
+    const priorSLAState = {
+      priority: ticket.priority_code,
+      slaResponseDueAt: ticket.sla_response_due_at ?? null,
+      slaResolutionDueAt: ticket.sla_resolution_due_at ?? null,
+      slaResponseBreachedAt: ticket.sla_response_breached_at ?? null,
+      slaResolutionBreachedAt: ticket.sla_resolution_breached_at ?? null,
+    };
+
+    // Reset clock to zero from now, apply new priority's DB-backed policy
+    const slaPolicy = getPolicyForPriority(db, priority);
+    const { responseDue, resolutionDue } = recalculateDueDates(priority, now, slaPolicy);
 
     db.prepare(
       `UPDATE ticket
        SET priority_id = ?,
            sla_response_due_at = ?,
            sla_resolution_due_at = ?,
+           sla_response_breached_at = NULL,
+           sla_resolution_breached_at = NULL,
+           sla_responded_at = NULL,
            updated_at = datetime('now')
        WHERE id = ?`
     ).run(priorityId, responseDue, resolutionDue, id);
@@ -511,8 +562,8 @@ const Mutation = {
       entityId: id,
       action: 'priority_changed',
       actorId: user.id,
-      previousValues: { priority: ticket.priority_code },
-      newValues: { priority },
+      previousValues: priorSLAState,
+      newValues: { priority, slaResponseDueAt: responseDue, slaResolutionDueAt: resolutionDue },
     });
 
     return mapTicket(getTicketOrThrow(db, id));
@@ -561,7 +612,8 @@ const Mutation = {
     }
 
     const openStatusId = statusIdByCode(db, 'OPEN');
-    const { responseDue, resolutionDue } = computeDueDates(ticket.priority_code);
+    const reopenPolicy = getPolicyForPriority(db, ticket.priority_code);
+    const { responseDue, resolutionDue } = computeDueDates(ticket.priority_code, new Date(), reopenPolicy);
 
     db.prepare(
       `UPDATE ticket
@@ -883,6 +935,49 @@ const Mutation = {
     requireRole(user, 'admin');
     const db = getWriteDb();
     return removeHoliday(db, id);
+  },
+
+  updateSLAConfig(_parent, { input }, { user }) {
+    requireRole(user, 'admin');
+    const db = getWriteDb();
+    const { policies = [], escalationThresholdPercent, unassignedEscalationThresholdHours } = input;
+
+    for (const p of policies) {
+      const row = upsertPolicy(db, {
+        priority: p.priority,
+        responseTimeHours: p.responseTimeHours,
+        resolutionTimeHours: p.resolutionTimeHours,
+        createdBy: user.id,
+      });
+      audit(db, {
+        entityType: 'SLAPolicy',
+        entityId: row.id,
+        action: 'sla_policy_updated',
+        actorId: user.id,
+        previousValues: {},
+        newValues: { priority: p.priority, responseTimeHours: p.responseTimeHours, resolutionTimeHours: p.resolutionTimeHours },
+      });
+    }
+
+    if (escalationThresholdPercent !== undefined || unassignedEscalationThresholdHours !== undefined) {
+      updateGlobalConfig(db, { escalationThresholdPercent, unassignedEscalationThresholdHours });
+      audit(db, {
+        entityType: 'SLAGlobalConfig',
+        entityId: 'singleton',
+        action: 'sla_global_config_updated',
+        actorId: user.id,
+        previousValues: {},
+        newValues: { escalationThresholdPercent, unassignedEscalationThresholdHours },
+      });
+    }
+
+    const updatedPolicies = getPolicies(db).map(mapSLAPolicy);
+    const global = getGlobalConfig(db);
+    return {
+      policies: updatedPolicies,
+      escalationThresholdPercent: global.escalation_threshold_percent,
+      unassignedEscalationThresholdHours: global.unassigned_escalation_threshold_hours,
+    };
   },
 };
 
