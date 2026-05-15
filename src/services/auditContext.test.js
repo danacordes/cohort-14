@@ -114,4 +114,19 @@ describe('audit()', () => {
       /append-only/
     );
   });
+
+  it('does not throw when audit write fails (soft-fail, ADR-001)', () => {
+    // Drop the table to force the INSERT to fail
+    const badDb = new DatabaseSync(':memory:');
+    // No audit_entries table — INSERT will throw internally
+    assert.doesNotThrow(() => {
+      audit(badDb, {
+        entityType: 'Ticket',
+        entityId: 'ticket-x',
+        action: 'created',
+        actorId: 'user-1',
+      });
+    });
+    badDb.close();
+  });
 });

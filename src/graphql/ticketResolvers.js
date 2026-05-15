@@ -183,11 +183,19 @@ function mapAuditEntry(row) {
     entityId: row.entity_id,
     action: row.action,
     actorId: row.actor_id,
+    actorName: row.actor_name ?? null,
     previousValues: row.previous_values,
     newValues: row.new_values,
     occurredAt: row.occurred_at,
   };
 }
+
+const AUDIT_ENTRY_SELECT = `
+  SELECT ae.*,
+    u.email AS actor_name
+  FROM audit_entries ae
+  LEFT JOIN users u ON u.id = ae.actor_id
+`;
 
 /** Look up a status_id by code. */
 function statusIdByCode(db, code) {
@@ -322,9 +330,9 @@ const Query = {
     requireRole(user, 'agent', 'admin');
     const db = getReadDb();
     const rows = db.prepare(
-      `SELECT * FROM audit_entries
-       WHERE entity_type = 'Ticket' AND entity_id = ?
-       ORDER BY occurred_at ASC`
+      `${AUDIT_ENTRY_SELECT}
+       WHERE ae.entity_type = 'Ticket' AND ae.entity_id = ?
+       ORDER BY ae.occurred_at DESC`
     ).all(ticketId);
     return rows.map(mapAuditEntry);
   },
@@ -373,6 +381,34 @@ const Query = {
     return listHolidays(db).map((h) => ({
       id: h.id, date: h.date, label: h.label, createdBy: h.created_by, createdAt: h.created_at,
     }));
+  },
+
+  auditLog(_parent, { entityType, entityId, page = {} }, { user }) {
+    requireRole(user, 'agent', 'admin');
+    const db = getReadDb();
+
+    const pageNum = Math.max(1, page.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, page.pageSize ?? 25));
+    const offset = (pageNum - 1) * pageSize;
+
+    const totalCount = db.prepare(
+      `SELECT COUNT(*) AS cnt FROM audit_entries
+       WHERE entity_type = ? AND entity_id = ?`
+    ).get(entityType, entityId).cnt;
+
+    const rows = db.prepare(
+      `${AUDIT_ENTRY_SELECT}
+       WHERE ae.entity_type = ? AND ae.entity_id = ?
+       ORDER BY ae.occurred_at DESC
+       LIMIT ? OFFSET ?`
+    ).all(entityType, entityId, pageSize, offset);
+
+    return {
+      items: rows.map(mapAuditEntry),
+      totalCount,
+      page: pageNum,
+      pageSize,
+    };
   },
 
   slaConfig(_parent, _args, { user }) {

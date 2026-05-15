@@ -47,9 +47,22 @@ export const typeDefs = `#graphql
     entityId: String!
     action: String!
     actorId: String!
+    actorName: String
     previousValues: String!
     newValues: String!
     occurredAt: String!
+  }
+
+  type AuditEntryPage {
+    items: [AuditEntry!]!
+    totalCount: Int!
+    page: Int!
+    pageSize: Int!
+  }
+
+  input PaginationInput {
+    page: Int
+    pageSize: Int
   }
 
   # ─── Attachments ─────────────────────────────────────────────────────────
@@ -251,6 +264,7 @@ export const typeDefs = `#graphql
     ): TicketConnection!
     ticketCategories: [TicketCategory!]!
     ticketAuditLog(ticketId: ID!): [AuditEntry!]!
+    auditLog(entityType: String!, entityId: ID!, page: PaginationInput): AuditEntryPage!
     ticketAttachments(ticketId: ID!): [TicketAttachment!]!
     agentWorkload: [WorkloadSummary!]!
     ticketComments(ticketId: ID!): [TicketComment!]!
