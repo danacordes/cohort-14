@@ -20,6 +20,7 @@ import {
 import { saveAttachments, getAttachments } from '../services/ticketAttachmentService.js';
 import { recordDeflection } from '../services/deflectionService.js';
 import { dispatch, Events } from '../services/notificationDispatcher.js';
+import { getWorkloadSummary } from '../services/agentWorkloadService.js';
 import {
   NotFoundError,
   ForbiddenError,
@@ -189,6 +190,10 @@ const Query = {
     if (user.role === 'user') {
       conditions.push('t.submitter_ref = ?');
       params.push(user.id);
+    } else if (user.role === 'agent') {
+      // Agents always see only their assigned tickets — server-enforced, not overridable
+      conditions.push('t.assigned_to = ?');
+      params.push(user.id);
     } else if (filter.submitterRef) {
       conditions.push('t.submitter_ref = ?');
       params.push(filter.submitterRef);
@@ -286,6 +291,12 @@ const Query = {
       }
     }
     return getAttachments(db, ticketId).map(mapAttachment);
+  },
+
+  agentWorkload(_parent, _args, { user }) {
+    requireRole(user, 'admin');
+    const db = getReadDb();
+    return getWorkloadSummary(db);
   },
 };
 
@@ -550,6 +561,80 @@ const Mutation = {
     const db = getWriteDb();
     const row = recordDeflection(db, { userId: user.id, articleId, queryText });
     return mapDeflectionEvent(row);
+  },
+
+  assignTicket(_parent, { ticketId, agentId }, { user }) {
+    requireRole(user, 'admin');
+    const db = getWriteDb();
+    const ticket = getTicketOrThrow(db, ticketId);
+
+    if (['RESOLVED', 'CLOSED'].includes(ticket.status_code)) {
+      throw new ValidationError('Cannot assign a resolved or closed ticket');
+    }
+
+    const agent = db.prepare(`SELECT id, email, role FROM users WHERE id = ?`).get(agentId);
+    if (!agent || agent.role !== 'agent') {
+      throw new ValidationError(`Agent ${agentId} not found or is not an agent`);
+    }
+
+    const previousAssignee = ticket.assigned_to;
+    db.prepare(
+      `UPDATE ticket SET assigned_to = ?, updated_at = datetime('now') WHERE id = ?`
+    ).run(agentId, ticketId);
+
+    const action = previousAssignee ? 'reassigned' : 'assigned';
+    audit(db, {
+      entityType: 'Ticket',
+      entityId: ticketId,
+      action,
+      actorId: user.id,
+      previousValues: { assignedTo: previousAssignee ?? null },
+      newValues: { assignedTo: agentId },
+    });
+
+    const event = previousAssignee ? Events.TICKET_REASSIGNED : Events.TICKET_ASSIGNED;
+    dispatch(event, {
+      ticketId,
+      assignedTo: agentId,
+      assignedBy: user.id,
+      previousAssignee: previousAssignee ?? null,
+    });
+
+    return mapTicket(getTicketOrThrow(db, ticketId));
+  },
+
+  selfAssignTicket(_parent, { ticketId }, { user }) {
+    requireRole(user, 'agent');
+    const db = getWriteDb();
+    const ticket = getTicketOrThrow(db, ticketId);
+
+    if (ticket.assigned_to !== null && ticket.assigned_to !== undefined) {
+      throw new ValidationError('Ticket is already assigned. Only unassigned tickets may be self-assigned.');
+    }
+    if (['RESOLVED', 'CLOSED'].includes(ticket.status_code)) {
+      throw new ValidationError('Cannot self-assign a resolved or closed ticket');
+    }
+
+    db.prepare(
+      `UPDATE ticket SET assigned_to = ?, updated_at = datetime('now') WHERE id = ?`
+    ).run(user.id, ticketId);
+
+    audit(db, {
+      entityType: 'Ticket',
+      entityId: ticketId,
+      action: 'self_assigned',
+      actorId: user.id,
+      previousValues: { assignedTo: null },
+      newValues: { assignedTo: user.id },
+    });
+
+    dispatch(Events.TICKET_ASSIGNED, {
+      ticketId,
+      assignedTo: user.id,
+      assignedBy: user.id,
+    });
+
+    return mapTicket(getTicketOrThrow(db, ticketId));
   },
 };
 

@@ -72,6 +72,14 @@ export const typeDefs = `#graphql
     storageKey: String!
   }
 
+  # ─── Workload ─────────────────────────────────────────────────────────────
+
+  type WorkloadSummary {
+    agentId: ID!
+    agentName: String!
+    openTicketCount: Int!
+  }
+
   # ─── Deflection ───────────────────────────────────────────────────────────
 
   type DeflectionEvent {
@@ -159,6 +167,7 @@ export const typeDefs = `#graphql
     ticketCategories: [TicketCategory!]!
     ticketAuditLog(ticketId: ID!): [AuditEntry!]!
     ticketAttachments(ticketId: ID!): [TicketAttachment!]!
+    agentWorkload: [WorkloadSummary!]!
   }
 
   # ─── Mutations ────────────────────────────────────────────────────────────
@@ -179,6 +188,9 @@ export const typeDefs = `#graphql
     deactivateTicketCategory(id: ID!): TicketCategory!
 
     recordDeflection(articleId: ID!, queryText: String): DeflectionEvent!
+
+    assignTicket(ticketId: ID!, agentId: ID!): Ticket!
+    selfAssignTicket(ticketId: ID!): Ticket!
   }
 `;
 
