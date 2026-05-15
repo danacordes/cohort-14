@@ -6,6 +6,11 @@ import Dashboard from './pages/Dashboard.jsx';
 import NotFound from './pages/NotFound.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import SsoCallbackPage from './pages/SsoCallbackPage.jsx';
+import KBSearchPage from './pages/kb/KBSearchPage.jsx';
+import KBArticlePage from './pages/kb/KBArticlePage.jsx';
+import KBArticleEditorPage from './pages/kb/KBArticleEditorPage.jsx';
+import KBReviewPage from './pages/kb/KBReviewPage.jsx';
+import KBAdminDashboard from './pages/kb/KBAdminDashboard.jsx';
 
 function App() {
   return (
@@ -23,6 +28,56 @@ function App() {
             element={
               <ErrorBoundary>
                 <Dashboard />
+              </ErrorBoundary>
+            }
+          />
+
+          {/* Knowledge Base */}
+          <Route
+            path="/kb"
+            element={
+              <ErrorBoundary>
+                <KBSearchPage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/kb/new"
+            element={
+              <ErrorBoundary>
+                <KBArticleEditorPage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/kb/review"
+            element={
+              <ErrorBoundary>
+                <KBReviewPage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/kb/admin"
+            element={
+              <ErrorBoundary>
+                <KBAdminDashboard />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/kb/:id"
+            element={
+              <ErrorBoundary>
+                <KBArticlePage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/kb/:id/edit"
+            element={
+              <ErrorBoundary>
+                <KBArticleEditorPage />
               </ErrorBoundary>
             }
           />

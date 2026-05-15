@@ -1,15 +1,75 @@
+import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Divider from '@mui/material/Divider';
+import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import { selectRole } from '../store/authSlice.js';
+
+function NavCard({ label, description, path, onClick }) {
+  return (
+    <Button
+      variant="outlined"
+      onClick={onClick}
+      sx={{
+        textAlign: 'left',
+        p: 2,
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        minWidth: 220,
+      }}
+    >
+      <Typography variant="subtitle1" fontWeight={600}>{label}</Typography>
+      <Typography variant="caption" color="text.secondary">{description}</Typography>
+    </Button>
+  );
+}
 
 function Dashboard() {
+  const navigate = useNavigate();
+  const role = useSelector(selectRole);
+
   return (
-    <Box p={4}>
-      <Typography variant="h4" gutterBottom>
+    <Box p={4} maxWidth={900}>
+      <Typography variant="h4" fontWeight={700} gutterBottom>
         Dashboard
       </Typography>
-      <Typography variant="body1" color="text.secondary">
-        Feature content will be implemented by feature work orders.
+      <Typography variant="body1" color="text.secondary" mb={3}>
+        Welcome. Use the shortcuts below to navigate the portal.
       </Typography>
+
+      <Divider sx={{ mb: 3 }} />
+
+      <Typography variant="h6" fontWeight={600} mb={2}>Knowledge Base</Typography>
+      <Stack direction="row" spacing={2} flexWrap="wrap" mb={4}>
+        <NavCard
+          label="Search KB"
+          description="Find articles and solutions"
+          onClick={() => navigate('/kb')}
+        />
+        {(role === 'agent' || role === 'admin') && (
+          <NavCard
+            label="New Article"
+            description="Author a KB article"
+            onClick={() => navigate('/kb/new')}
+          />
+        )}
+        {(role === 'agent' || role === 'admin') && (
+          <NavCard
+            label="Pending Review"
+            description="Articles awaiting approval"
+            onClick={() => navigate('/kb/review')}
+          />
+        )}
+        {role === 'admin' && (
+          <NavCard
+            label="KB Admin"
+            description="Usage metrics and coverage gaps"
+            onClick={() => navigate('/kb/admin')}
+          />
+        )}
+      </Stack>
     </Box>
   );
 }
