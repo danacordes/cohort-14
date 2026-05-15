@@ -70,6 +70,46 @@ function Dashboard() {
           />
         )}
       </Stack>
+
+      <Divider sx={{ mb: 3 }} />
+
+      <Typography variant="h6" fontWeight={600} mb={2}>Reports</Typography>
+      <Stack direction="row" spacing={2} flexWrap="wrap" mb={4}>
+        <NavCard
+          label="Dashboard"
+          description="Live operational metrics"
+          onClick={() => navigate('/reporting')}
+        />
+        <NavCard
+          label="Ticket Volume"
+          description="Submission and closure trends"
+          onClick={() => navigate('/reporting/ticket-volume')}
+        />
+        <NavCard
+          label="SLA Performance"
+          description="Compliance rates and breaches"
+          onClick={() => navigate('/reporting/sla-performance')}
+        />
+        <NavCard
+          label="Quality & Satisfaction"
+          description="FCR, reopen rate, CSAT"
+          onClick={() => navigate('/reporting/quality')}
+        />
+        {role === 'admin' && (
+          <NavCard
+            label="Agent Performance"
+            description="Per-agent metrics (admin)"
+            onClick={() => navigate('/reporting/agent-performance')}
+          />
+        )}
+        {role === 'admin' && (
+          <NavCard
+            label="KB Usage"
+            description="Article views and deflections (admin)"
+            onClick={() => navigate('/reporting/kb-usage')}
+          />
+        )}
+      </Stack>
     </Box>
   );
 }

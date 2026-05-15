@@ -11,6 +11,8 @@ import KBArticlePage from './pages/kb/KBArticlePage.jsx';
 import KBArticleEditorPage from './pages/kb/KBArticleEditorPage.jsx';
 import KBReviewPage from './pages/kb/KBReviewPage.jsx';
 import KBAdminDashboard from './pages/kb/KBAdminDashboard.jsx';
+import DashboardPage from './pages/reporting/DashboardPage.jsx';
+import ReportPage from './pages/reporting/ReportPage.jsx';
 
 function App() {
   return (
@@ -78,6 +80,24 @@ function App() {
             element={
               <ErrorBoundary>
                 <KBArticleEditorPage />
+              </ErrorBoundary>
+            }
+          />
+
+          {/* Reporting & Analytics */}
+          <Route
+            path="/reporting"
+            element={
+              <ErrorBoundary>
+                <DashboardPage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/reporting/:reportType"
+            element={
+              <ErrorBoundary>
+                <ReportPage />
               </ErrorBoundary>
             }
           />
