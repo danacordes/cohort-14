@@ -2,6 +2,19 @@ import { createSlice } from '@reduxjs/toolkit';
 
 const TOKEN_KEY = 'authToken';
 
+// Safe accessor — prefers window.localStorage (always set by jsdom/browser) over the
+// bare global which Node.js v22 experimental Web Storage can set to undefined.
+const storage = (() => {
+  try {
+    const s =
+      (typeof window !== 'undefined' && window.localStorage) ||
+      (typeof localStorage !== 'undefined' && localStorage) ||
+      null;
+    if (s && typeof s.getItem === 'function') return s;
+  } catch { /* ignore */ }
+  return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+})();
+
 function decodePayload(token) {
   try {
     const payload = token.split('.')[1];
@@ -12,16 +25,16 @@ function decodePayload(token) {
 }
 
 function loadInitialState() {
-  const token = localStorage.getItem(TOKEN_KEY);
+  const token = storage.getItem(TOKEN_KEY);
   if (!token) return { token: null, user: null, isAuthenticated: false };
   const payload = decodePayload(token);
   if (!payload) {
-    localStorage.removeItem(TOKEN_KEY);
+    storage.removeItem(TOKEN_KEY);
     return { token: null, user: null, isAuthenticated: false };
   }
   // Treat expired tokens as unauthenticated — UNAUTHENTICATED error path handles cleanup
   if (payload.exp && payload.exp * 1000 < Date.now()) {
-    localStorage.removeItem(TOKEN_KEY);
+    storage.removeItem(TOKEN_KEY);
     return { token: null, user: null, isAuthenticated: false };
   }
   return {
@@ -44,7 +57,7 @@ const authSlice = createSlice({
       const token = action.payload;
       const payload = decodePayload(token);
       if (!payload) return;
-      localStorage.setItem(TOKEN_KEY, token);
+      storage.setItem(TOKEN_KEY, token);
       state.token = token;
       state.user = {
         sub: payload.sub,
@@ -62,7 +75,7 @@ const authSlice = createSlice({
       const token = decodeURIComponent(match[1]);
       const payload = decodePayload(token);
       if (!payload) return;
-      localStorage.setItem(TOKEN_KEY, token);
+      storage.setItem(TOKEN_KEY, token);
       state.token = token;
       state.user = {
         sub: payload.sub,
@@ -72,11 +85,13 @@ const authSlice = createSlice({
       };
       state.isAuthenticated = true;
       // Clear the hash fragment from the browser URL without triggering navigation
-      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      if (typeof window !== 'undefined' && window.history) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
     },
 
     logout(state) {
-      localStorage.removeItem(TOKEN_KEY);
+      storage.removeItem(TOKEN_KEY);
       state.token = null;
       state.user = null;
       state.isAuthenticated = false;
