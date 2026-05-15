@@ -1,10 +1,10 @@
 import { configureStore } from '@reduxjs/toolkit';
 import errorsReducer from './errorsSlice.js';
-
-// authReducer will be added by WO #22 (Build Authentication UI)
+import authReducer from './authSlice.js';
 
 const store = configureStore({
   reducer: {
+    auth: authReducer,
     errors: errorsReducer,
   },
 });

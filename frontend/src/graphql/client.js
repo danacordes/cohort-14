@@ -12,15 +12,16 @@ import {
   setNetworkError,
   clearErrors,
 } from '../store/errorsSlice.js';
+import { logout } from '../store/authSlice.js';
 
 const httpLink = new HttpLink({
   uri: import.meta.env.VITE_GRAPHQL_URL ?? 'http://localhost:4000/graphql',
 });
 
-// Attaches Authorization: Bearer <token> from localStorage on every request.
-// WO #22 (Auth UI) will update this to also dispatch from AuthStore.
+// Reads the token from Redux state so it always reflects the current session,
+// including immediately after logout clears the token.
 const authLink = setContext((_, { headers }) => {
-  const token = localStorage.getItem('authToken');
+  const token = store.getState().auth.token;
   return {
     headers: {
       ...headers,
@@ -35,7 +36,6 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
     return;
   }
 
-  // Clear any prior network error on a successful connection
   store.dispatch(setNetworkError(false));
 
   if (graphQLErrors) {
@@ -43,7 +43,7 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
       const code = extensions?.code;
 
       if (code === 'UNAUTHENTICATED') {
-        localStorage.removeItem('authToken');
+        store.dispatch(logout());
         store.dispatch(clearErrors());
         window.location.replace('/login');
         return;
@@ -61,7 +61,6 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
         continue;
       }
 
-      // All other errors (VALIDATION_ERROR, INTERNAL_SERVER_ERROR, unknown)
       store.dispatch(
         addError({ code: code ?? 'ERROR', message: 'Something went wrong. Please try again.' })
       );

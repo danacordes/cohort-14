@@ -4,11 +4,8 @@ import GlobalErrorDisplay from './components/GlobalErrorDisplay.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import NotFound from './pages/NotFound.jsx';
-
-// Login page will be implemented by WO #22 (Build Authentication UI)
-function LoginPlaceholder() {
-  return null;
-}
+import LoginPage from './pages/LoginPage.jsx';
+import SsoCallbackPage from './pages/SsoCallbackPage.jsx';
 
 function App() {
   return (
@@ -16,7 +13,8 @@ function App() {
       <GlobalErrorDisplay />
       <Routes>
         {/* Public routes */}
-        <Route path="/login" element={<LoginPlaceholder />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/auth/callback" element={<SsoCallbackPage />} />
 
         {/* Protected routes — wrapped by AuthGuard */}
         <Route element={<AuthGuard />}>
