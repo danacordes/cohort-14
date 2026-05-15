@@ -21,6 +21,22 @@ import { saveAttachments, getAttachments } from '../services/ticketAttachmentSer
 import { recordDeflection } from '../services/deflectionService.js';
 import { dispatch, Events } from '../services/notificationDispatcher.js';
 import { getWorkloadSummary } from '../services/agentWorkloadService.js';
+import { addComment, getComments } from '../services/ticketCommentService.js';
+import {
+  getConfig,
+  updateConfig,
+  updateCSATEnabled,
+  listHolidays,
+  addHoliday,
+  removeHoliday,
+  computeAutoCloseAt,
+} from '../services/businessCalendarService.js';
+import {
+  generateSurveyToken,
+  validateSurveyToken,
+  recordResponse,
+  isEnabled as csatIsEnabled,
+} from '../services/csatService.js';
 import {
   NotFoundError,
   ForbiddenError,
@@ -94,6 +110,7 @@ function mapTicket(row) {
     closedAt: row.closed_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    closureNumber: row.closure_number ?? 0,
   };
 }
 
@@ -215,6 +232,13 @@ const Query = {
       conditions.push('t.assigned_to = ?');
       params.push(filter.assignedTo);
     }
+    if (filter.search) {
+      conditions.push(
+        `(t.title LIKE ? OR t.description LIKE ? OR t.resolution_summary LIKE ?)`
+      );
+      const term = `%${filter.search}%`;
+      params.push(term, term, term);
+    }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -297,6 +321,34 @@ const Query = {
     requireRole(user, 'admin');
     const db = getReadDb();
     return getWorkloadSummary(db);
+  },
+
+  ticketComments(_parent, { ticketId }, { user }) {
+    requireAuth(user);
+    const db = getReadDb();
+    return getComments(db, ticketId, user.role).map((r) => ({
+      id: r.id,
+      ticketId: r.ticket_id,
+      body: r.body,
+      isInternal: r.is_internal === 1,
+      authorId: r.author_id,
+      createdAt: r.created_at,
+    }));
+  },
+
+  closureConfig(_parent, _args, { user }) {
+    requireRole(user, 'admin');
+    const db = getReadDb();
+    const c = getConfig(db);
+    return { autoCloseBusinessDays: c.auto_close_business_days, csatEnabled: c.csat_enabled === 1 };
+  },
+
+  holidays(_parent, _args, { user }) {
+    requireRole(user, 'admin');
+    const db = getReadDb();
+    return listHolidays(db).map((h) => ({
+      id: h.id, date: h.date, label: h.label, createdBy: h.created_by, createdAt: h.created_at,
+    }));
   },
 };
 
@@ -636,6 +688,202 @@ const Mutation = {
 
     return mapTicket(getTicketOrThrow(db, ticketId));
   },
+
+  // ── Resolution & Communication ───────────────────────────────────────────
+
+  addComment(_parent, { input }, { user }) {
+    requireAuth(user);
+    const { ticketId, body, isInternal = false } = input;
+    const db = getWriteDb();
+    const row = addComment(db, { ticketId, authorId: user.id, body, isInternal, authorRole: user.role });
+    return {
+      id: row.id,
+      ticketId: row.ticket_id,
+      body: row.body,
+      isInternal: row.is_internal === 1,
+      authorId: row.author_id,
+      createdAt: row.created_at,
+    };
+  },
+
+  resolveTicket(_parent, { ticketId, resolutionSummary }, { user }) {
+    requireRole(user, 'agent', 'admin');
+    const db = getWriteDb();
+    const ticket = getTicketOrThrow(db, ticketId);
+
+    if (!['OPEN', 'IN_PROGRESS', 'PENDING_USER_RESPONSE'].includes(ticket.status_code)) {
+      throw new ValidationError(`Cannot resolve ticket from status: ${ticket.status_code}`);
+    }
+    if (!resolutionSummary || !resolutionSummary.trim()) {
+      throw new ValidationError('resolutionSummary is required');
+    }
+
+    const resolvedStatusId = statusIdByCode(db, 'RESOLVED');
+    const now = new Date();
+    const autoCloseAt = computeAutoCloseAt(db, now.toISOString());
+
+    db.prepare(
+      `UPDATE ticket
+       SET status_id = ?,
+           resolution_summary = ?,
+           resolved_at = datetime('now'),
+           auto_close_at = ?,
+           updated_at = datetime('now')
+       WHERE id = ?`
+    ).run(resolvedStatusId, resolutionSummary.trim(), autoCloseAt, ticketId);
+
+    audit(db, {
+      entityType: 'Ticket',
+      entityId: ticketId,
+      action: 'resolved',
+      actorId: user.id,
+      previousValues: { status: ticket.status_code },
+      newValues: { status: 'RESOLVED', resolutionSummary: resolutionSummary.trim() },
+    });
+
+    dispatch(Events.TICKET_RESOLVED, {
+      ticketId,
+      resolutionSummary: resolutionSummary.trim(),
+      submitterId: ticket.submitter_ref,
+    });
+
+    return mapTicket(getTicketOrThrow(db, ticketId));
+  },
+
+  confirmResolution(_parent, { ticketId }, { user }) {
+    requireAuth(user);
+    const db = getWriteDb();
+    const ticket = getTicketOrThrow(db, ticketId);
+
+    if (ticket.status_code !== 'RESOLVED') {
+      throw new ValidationError('Ticket must be in RESOLVED status to confirm resolution');
+    }
+    if (user.role === 'user' && ticket.submitter_ref !== user.id) {
+      throw new ForbiddenError('You may only confirm resolution of your own tickets');
+    }
+
+    const closedStatusId = statusIdByCode(db, 'CLOSED');
+    const newClosureNumber = (ticket.closure_number ?? 0) + 1;
+
+    db.prepare(
+      `UPDATE ticket
+       SET status_id = ?,
+           closed_at = datetime('now'),
+           closure_number = ?,
+           updated_at = datetime('now')
+       WHERE id = ?`
+    ).run(closedStatusId, newClosureNumber, ticketId);
+
+    audit(db, {
+      entityType: 'Ticket',
+      entityId: ticketId,
+      action: 'resolution_confirmed',
+      actorId: user.id,
+      previousValues: { status: 'RESOLVED' },
+      newValues: { status: 'CLOSED', closureNumber: newClosureNumber },
+    });
+
+    const surveyToken = csatIsEnabled(db)
+      ? generateSurveyToken(ticketId, newClosureNumber)
+      : null;
+
+    dispatch(Events.TICKET_CLOSED, {
+      ticketId,
+      closureNumber: newClosureNumber,
+      confirmedBySubmitter: true,
+      surveyToken,
+    });
+
+    return mapTicket(getTicketOrThrow(db, ticketId));
+  },
+
+  closeTicket(_parent, { ticketId }, { user }) {
+    requireRole(user, 'agent', 'admin');
+    const db = getWriteDb();
+    const ticket = getTicketOrThrow(db, ticketId);
+
+    if (!['RESOLVED', 'IN_PROGRESS', 'OPEN', 'PENDING_USER_RESPONSE'].includes(ticket.status_code)) {
+      throw new ValidationError(`Cannot close ticket from status: ${ticket.status_code}`);
+    }
+
+    const closedStatusId = statusIdByCode(db, 'CLOSED');
+    const newClosureNumber = (ticket.closure_number ?? 0) + 1;
+
+    db.prepare(
+      `UPDATE ticket
+       SET status_id = ?,
+           closed_at = datetime('now'),
+           closure_number = ?,
+           updated_at = datetime('now')
+       WHERE id = ?`
+    ).run(closedStatusId, newClosureNumber, ticketId);
+
+    audit(db, {
+      entityType: 'Ticket',
+      entityId: ticketId,
+      action: 'closed',
+      actorId: user.id,
+      previousValues: { status: ticket.status_code },
+      newValues: { status: 'CLOSED', closureNumber: newClosureNumber },
+    });
+
+    const surveyToken = csatIsEnabled(db)
+      ? generateSurveyToken(ticketId, newClosureNumber)
+      : null;
+
+    dispatch(Events.TICKET_CLOSED, { ticketId, closureNumber: newClosureNumber, surveyToken });
+
+    return mapTicket(getTicketOrThrow(db, ticketId));
+  },
+
+  // ── CSAT ──────────────────────────────────────────────────────────────────
+
+  submitCSATResponse(_parent, { token, rating, comment }) {
+    // No auth required — validated via signed token
+    const db = getWriteDb();
+    if (!csatIsEnabled(db)) {
+      throw new ValidationError('CSAT surveys are currently disabled');
+    }
+    const { ticketId, closureNumber } = validateSurveyToken(token);
+    const row = recordResponse(db, { ticketId, closureNumber, rating, comment });
+    return {
+      id: row.id,
+      ticketId: row.ticket_id,
+      closureNumber: row.closure_number,
+      rating: row.rating,
+      comment: row.comment ?? null,
+      submittedAt: row.submitted_at,
+    };
+  },
+
+  // ── Config & holiday admin ────────────────────────────────────────────────
+
+  updateCSATConfig(_parent, { enabled }, { user }) {
+    requireRole(user, 'admin');
+    const db = getWriteDb();
+    const c = updateCSATEnabled(db, enabled);
+    return { autoCloseBusinessDays: c.auto_close_business_days, csatEnabled: c.csat_enabled === 1 };
+  },
+
+  updateClosureConfig(_parent, { autoCloseBusinessDays }, { user }) {
+    requireRole(user, 'admin');
+    const db = getWriteDb();
+    const c = updateConfig(db, { autoCloseBusinessDays });
+    return { autoCloseBusinessDays: c.auto_close_business_days, csatEnabled: c.csat_enabled === 1 };
+  },
+
+  addHoliday(_parent, { date, label }, { user }) {
+    requireRole(user, 'admin');
+    const db = getWriteDb();
+    const h = addHoliday(db, { date, label, createdBy: user.id });
+    return { id: h.id, date: h.date, label: h.label, createdBy: h.created_by, createdAt: h.created_at };
+  },
+
+  removeHoliday(_parent, { id }, { user }) {
+    requireRole(user, 'admin');
+    const db = getWriteDb();
+    return removeHoliday(db, id);
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -646,6 +894,18 @@ const Ticket = {
   attachments(parent, _args, _ctx) {
     const db = getReadDb();
     return getAttachments(db, parent.id).map(mapAttachment);
+  },
+
+  comments(parent, _args, { user }) {
+    const db = getReadDb();
+    return getComments(db, parent.id, user?.role ?? 'user').map((r) => ({
+      id: r.id,
+      ticketId: r.ticket_id,
+      body: r.body,
+      isInternal: r.is_internal === 1,
+      authorId: r.author_id,
+      createdAt: r.created_at,
+    }));
   },
 };
 

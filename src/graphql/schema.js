@@ -72,6 +72,55 @@ export const typeDefs = `#graphql
     storageKey: String!
   }
 
+  # ─── Comments ─────────────────────────────────────────────────────────────
+
+  type TicketComment {
+    id: ID!
+    ticketId: ID!
+    body: String!
+    isInternal: Boolean!
+    authorId: String!
+    createdAt: String!
+  }
+
+  input AddCommentInput {
+    ticketId: ID!
+    body: String!
+    isInternal: Boolean
+  }
+
+  # ─── CSAT ─────────────────────────────────────────────────────────────────
+
+  type CSATResponse {
+    id: ID!
+    ticketId: ID!
+    closureNumber: Int!
+    rating: Int!
+    comment: String
+    submittedAt: String!
+  }
+
+  type CSATConfig {
+    csatEnabled: Boolean!
+  }
+
+  # ─── Closure config ───────────────────────────────────────────────────────
+
+  type ClosureConfig {
+    autoCloseBusinessDays: Int!
+    csatEnabled: Boolean!
+  }
+
+  # ─── Holidays ─────────────────────────────────────────────────────────────
+
+  type Holiday {
+    id: ID!
+    date: String!
+    label: String!
+    createdBy: String!
+    createdAt: String!
+  }
+
   # ─── Workload ─────────────────────────────────────────────────────────────
 
   type WorkloadSummary {
@@ -112,7 +161,9 @@ export const typeDefs = `#graphql
     closedAt: String
     createdAt: String!
     updatedAt: String!
+    closureNumber: Int!
     attachments: [TicketAttachment!]!
+    comments: [TicketComment!]!
   }
 
   type TicketEdge {
@@ -142,6 +193,7 @@ export const typeDefs = `#graphql
     categoryId: ID
     assignedTo: ID
     submitterRef: ID
+    search: String
   }
 
   input TicketSortInput {
@@ -168,6 +220,9 @@ export const typeDefs = `#graphql
     ticketAuditLog(ticketId: ID!): [AuditEntry!]!
     ticketAttachments(ticketId: ID!): [TicketAttachment!]!
     agentWorkload: [WorkloadSummary!]!
+    ticketComments(ticketId: ID!): [TicketComment!]!
+    closureConfig: ClosureConfig!
+    holidays: [Holiday!]!
   }
 
   # ─── Mutations ────────────────────────────────────────────────────────────
@@ -191,6 +246,17 @@ export const typeDefs = `#graphql
 
     assignTicket(ticketId: ID!, agentId: ID!): Ticket!
     selfAssignTicket(ticketId: ID!): Ticket!
+
+    addComment(input: AddCommentInput!): TicketComment!
+    resolveTicket(ticketId: ID!, resolutionSummary: String!): Ticket!
+    confirmResolution(ticketId: ID!): Ticket!
+    closeTicket(ticketId: ID!): Ticket!
+
+    submitCSATResponse(token: String!, rating: Int!, comment: String): CSATResponse!
+    updateCSATConfig(enabled: Boolean!): ClosureConfig!
+    updateClosureConfig(autoCloseBusinessDays: Int!): ClosureConfig!
+    addHoliday(date: String!, label: String!): Holiday!
+    removeHoliday(id: ID!): Boolean!
   }
 `;
 

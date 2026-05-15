@@ -8,6 +8,7 @@ import { GraphQLError } from 'graphql';
 import { typeDefs, resolvers } from './graphql/schema.js';
 import authRouter from './routes/auth.js';
 import { authMiddleware } from './middleware/auth.js';
+import { start as startAutoClose } from './services/autoCloseScheduler.js';
 
 const isDev = process.env.NODE_ENV !== 'production';
 const PORT = process.env.PORT ?? 4000;
@@ -76,6 +77,8 @@ app.use(
   }),
 );
 
+const autoClose = startAutoClose();
+
 const server = app.listen(PORT, () => {
   if (isDev) {
     console.log(`Server ready at http://localhost:${PORT}/graphql`);
@@ -97,6 +100,7 @@ function shutdown(signal) {
     console.log(JSON.stringify({ level: 'info', message: 'Shutdown', signal, timestamp: new Date().toISOString() }));
   }
   server.close(() => {
+    autoClose.stop();
     closeAll();
     process.exit(0);
   });
