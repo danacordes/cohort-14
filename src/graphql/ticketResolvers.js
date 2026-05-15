@@ -17,6 +17,9 @@ import {
   renameCategory,
   deactivateCategory,
 } from '../services/categoryService.js';
+import { saveAttachments, getAttachments } from '../services/ticketAttachmentService.js';
+import { recordDeflection } from '../services/deflectionService.js';
+import { dispatch, Events } from '../services/notificationDispatcher.js';
 import {
   NotFoundError,
   ForbiddenError,
@@ -102,6 +105,31 @@ function mapCategory(row) {
     isActive: row.is_active === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+/** Map a raw ticket_attachment row to the GraphQL TicketAttachment shape. */
+function mapAttachment(row) {
+  return {
+    id: row.id,
+    ticketId: row.ticket_id,
+    filename: row.filename,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes,
+    storageKey: row.storage_key,
+    uploadedBy: row.uploaded_by,
+    uploadedAt: row.uploaded_at,
+  };
+}
+
+/** Map a raw deflection_event row to the GraphQL DeflectionEvent shape. */
+function mapDeflectionEvent(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    articleId: row.article_id,
+    queryText: row.query_text,
+    occurredAt: row.occurred_at,
   };
 }
 
@@ -247,6 +275,18 @@ const Query = {
     ).all(ticketId);
     return rows.map(mapAuditEntry);
   },
+
+  ticketAttachments(_parent, { ticketId }, { user }) {
+    requireAuth(user);
+    const db = getReadDb();
+    if (user.role === 'user') {
+      const ticket = db.prepare('SELECT submitter_ref FROM ticket WHERE id = ?').get(ticketId);
+      if (!ticket || ticket.submitter_ref !== user.id) {
+        throw new ForbiddenError('You may only view attachments on your own tickets');
+      }
+    }
+    return getAttachments(db, ticketId).map(mapAttachment);
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -256,7 +296,7 @@ const Query = {
 const Mutation = {
   createTicket(_parent, { input }, { user }) {
     requireAuth(user);
-    const { title, description = '', priority = 'MEDIUM', categoryId = null } = input;
+    const { title, description = '', priority = 'MEDIUM', categoryId = null, attachments = [] } = input;
 
     if (!title || !title.trim()) throw new ValidationError('Title is required');
     if (categoryId) {
@@ -285,6 +325,10 @@ const Mutation = {
             statusId, priorityId, categoryId,
             responseDue, resolutionDue);
 
+      if (attachments.length > 0) {
+        saveAttachments(db, id, user.id, attachments);
+      }
+
       audit(db, {
         entityType: 'Ticket',
         entityId: id,
@@ -300,7 +344,16 @@ const Mutation = {
       throw err;
     }
 
-    return mapTicket(getTicketOrThrow(db, id));
+    const ticket = getTicketOrThrow(db, id);
+
+    dispatch(Events.TICKET_CREATED, {
+      ticketId: id,
+      publicNumber: ticket.public_number,
+      submitterId: user.id,
+      title: ticket.title,
+    });
+
+    return mapTicket(ticket);
   },
 
   updateTicketStatus(_parent, { id, status, resolutionSummary }, { user }) {
@@ -491,6 +544,24 @@ const Mutation = {
     const db = getWriteDb();
     return mapCategory(deactivateCategory(db, id));
   },
+
+  recordDeflection(_parent, { articleId, queryText = '' }, { user }) {
+    requireAuth(user);
+    const db = getWriteDb();
+    const row = recordDeflection(db, { userId: user.id, articleId, queryText });
+    return mapDeflectionEvent(row);
+  },
 };
 
-export const ticketResolvers = { Query, Mutation };
+// ---------------------------------------------------------------------------
+// Field resolvers
+// ---------------------------------------------------------------------------
+
+const Ticket = {
+  attachments(parent, _args, _ctx) {
+    const db = getReadDb();
+    return getAttachments(db, parent.id).map(mapAttachment);
+  },
+};
+
+export const ticketResolvers = { Query, Mutation, Ticket };

@@ -52,6 +52,36 @@ export const typeDefs = `#graphql
     occurredAt: String!
   }
 
+  # ─── Attachments ─────────────────────────────────────────────────────────
+
+  type TicketAttachment {
+    id: ID!
+    ticketId: ID!
+    filename: String!
+    mimeType: String!
+    sizeBytes: Int!
+    storageKey: String!
+    uploadedBy: String!
+    uploadedAt: String!
+  }
+
+  input AttachmentInput {
+    filename: String!
+    mimeType: String!
+    sizeBytes: Int
+    storageKey: String!
+  }
+
+  # ─── Deflection ───────────────────────────────────────────────────────────
+
+  type DeflectionEvent {
+    id: ID!
+    userId: String!
+    articleId: String!
+    queryText: String!
+    occurredAt: String!
+  }
+
   # ─── Ticket ───────────────────────────────────────────────────────────────
 
   type Ticket {
@@ -74,6 +104,7 @@ export const typeDefs = `#graphql
     closedAt: String
     createdAt: String!
     updatedAt: String!
+    attachments: [TicketAttachment!]!
   }
 
   type TicketEdge {
@@ -94,6 +125,7 @@ export const typeDefs = `#graphql
     description: String
     priority: TicketPriorityEnum
     categoryId: ID
+    attachments: [AttachmentInput!]
   }
 
   input TicketFilterInput {
@@ -126,6 +158,7 @@ export const typeDefs = `#graphql
     ): TicketConnection!
     ticketCategories: [TicketCategory!]!
     ticketAuditLog(ticketId: ID!): [AuditEntry!]!
+    ticketAttachments(ticketId: ID!): [TicketAttachment!]!
   }
 
   # ─── Mutations ────────────────────────────────────────────────────────────
@@ -144,6 +177,8 @@ export const typeDefs = `#graphql
     createTicketCategory(input: CreateCategoryInput!): TicketCategory!
     renameTicketCategory(id: ID!, name: String!): TicketCategory!
     deactivateTicketCategory(id: ID!): TicketCategory!
+
+    recordDeflection(articleId: ID!, queryText: String): DeflectionEvent!
   }
 `;
 
