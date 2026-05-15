@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { closeAll } from './db/pool.js';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@as-integrations/express5';
 import { GraphQLError } from 'graphql';
@@ -73,16 +74,31 @@ app.use(
   }),
 );
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   if (isDev) {
     console.log(`Server ready at http://localhost:${PORT}/graphql`);
     console.log(`Apollo Sandbox: http://localhost:${PORT}/graphql`);
   } else {
     console.log(JSON.stringify({
       level: 'info',
-      message: `Server started`,
+      message: 'Server started',
       port: PORT,
       timestamp: new Date().toISOString(),
     }));
   }
 });
+
+function shutdown(signal) {
+  if (isDev) {
+    console.log(`\n${signal} received — shutting down`);
+  } else {
+    console.log(JSON.stringify({ level: 'info', message: 'Shutdown', signal, timestamp: new Date().toISOString() }));
+  }
+  server.close(() => {
+    closeAll();
+    process.exit(0);
+  });
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

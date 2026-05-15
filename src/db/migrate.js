@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import path from 'path';
 import { openDatabase } from './openDatabase.js';
 import { runPendingMigrations } from './migrate-lib.js';

@@ -1,0 +1,733 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Cohort 14 ITSM Platform — full AWS infrastructure stack.
+  Provisions VPC, EC2 (t3.small/medium), EBS, Elastic IP, ALB, ACM certificate,
+  CloudWatch Logs, VPC Interface Endpoint, IAM role, Cognito User Pool, and
+  Amplify app.
+
+# ---------------------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------------------
+Parameters:
+  Env:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+    Description: Deployment environment label used in resource names and tags.
+
+  InstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues: [t3.small, t3.medium]
+    Description: EC2 instance type for the back-end host.
+
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Amazon Linux 2023 latest AMI (resolved from SSM Parameter Store).
+
+  ApiDomain:
+    Type: String
+    Description: >
+      Fully-qualified domain name for the back-end API (e.g. api.cohort14.example.com).
+      An ACM certificate will be requested for this domain. You must add the DNS
+      validation CNAME record before the certificate — and therefore the HTTPS
+      listener — will become active.
+
+  FrontendDomain:
+    Type: String
+    Description: >
+      Fully-qualified domain name of the Amplify-hosted front end
+      (e.g. cohort14.example.com). Used in the back-end CORS allowlist and
+      Cognito callback URL.
+
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 key pair name for SSH access (must exist in this region).
+
+  RepoUrl:
+    Type: String
+    Description: >
+      HTTPS clone URL of the source repository connected to Amplify
+      (e.g. https://github.com/org/repo).
+
+  AmplifyBranch:
+    Type: String
+    Default: main
+    Description: Source control branch Amplify tracks for CI/CD builds.
+
+  AmplifyGitHubToken:
+    Type: String
+    NoEcho: true
+    Description: >
+      GitHub personal access token (or equivalent) granting Amplify read access
+      to the repository. Store in Secrets Manager and pass via --parameter-overrides.
+
+  EbsVolumeSize:
+    Type: Number
+    Default: 20
+    MinValue: 10
+    MaxValue: 500
+    Description: Size in GiB of the dedicated EBS data volume for the SQLite database.
+
+# ---------------------------------------------------------------------------
+# Mappings
+# ---------------------------------------------------------------------------
+Mappings:
+  SubnetConfig:
+    VPC:
+      CIDR: "10.0.0.0/16"
+    PublicA:
+      CIDR: "10.0.0.0/24"
+    PublicB:
+      CIDR: "10.0.1.0/24"
+    Private:
+      CIDR: "10.0.2.0/24"
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+Resources:
+
+  # =========================================================================
+  # Phase 1 — Networking
+  # =========================================================================
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !FindInMap [SubnetConfig, VPC, CIDR]
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-igw
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap [SubnetConfig, PublicA, CIDR]
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-public-a
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap [SubnetConfig, PublicB, CIDR]
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-public-b
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap [SubnetConfig, Private, CIDR]
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-private
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-public-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  # NAT Gateway for private subnet outbound (Cognito token exchange, package installs)
+  NatEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-nat
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-private-rt
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  # =========================================================================
+  # Phase 2 — Security Groups
+  # =========================================================================
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB — inbound HTTPS 443 from internet only
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: "0.0.0.0/0"
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-alb-sg
+
+  Ec2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EC2 — inbound from ALB security group only; no direct public access
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 4000
+          ToPort: 4000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-ec2-sg
+
+  VpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: VPC Interface Endpoint — allow HTTPS from EC2
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref Ec2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-vpce-sg
+
+  # =========================================================================
+  # Phase 3 — IAM Role & Instance Profile
+  # =========================================================================
+
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub cohort14-${Env}-ec2-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudWatchLogsWrite
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/cohort14/*:*"
+        - PolicyName: SESLimitedSend
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: !Sub "noreply@${FrontendDomain}"
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-ec2-role
+
+  Ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub cohort14-${Env}-ec2-profile
+      Roles:
+        - !Ref Ec2Role
+
+  # =========================================================================
+  # Phase 4 — EC2 Instance + EBS + Elastic IP
+  # =========================================================================
+
+  Ec2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId
+      KeyName: !Ref KeyPairName
+      SubnetId: !Ref PublicSubnetA
+      SecurityGroupIds:
+        - !Ref Ec2SecurityGroup
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          exec > >(tee /var/log/user-data.log | logger -t user-data) 2>&1
+
+          # System updates
+          dnf update -y
+          dnf install -y amazon-cloudwatch-agent
+
+          # Node.js LTS via NodeSource
+          curl -fsSL https://rpm.nodesource.com/setup_lts.x | bash -
+          dnf install -y nodejs
+
+          # PM2 for process management
+          npm install -g pm2
+          pm2 startup systemd -u ec2-user --hp /home/ec2-user
+          env PATH=$PATH:/usr/bin pm2 startup systemd -u ec2-user --hp /home/ec2-user | bash
+
+          # Mount dedicated EBS data volume at /data
+          DATA_DEVICE=/dev/xvdf
+          # Wait for device to attach
+          while [ ! -b "$DATA_DEVICE" ]; do sleep 2; done
+          # Format only if not already formatted
+          if ! blkid "$DATA_DEVICE" | grep -q ext4; then
+            mkfs.ext4 "$DATA_DEVICE"
+          fi
+          mkdir -p /data
+          mount "$DATA_DEVICE" /data
+          echo "$DATA_DEVICE /data ext4 defaults,nofail 0 2" >> /etc/fstab
+          chown ec2-user:ec2-user /data
+
+          # CloudWatch Agent config
+          mkdir -p /opt/aws/amazon-cloudwatch-agent/etc
+          cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWCONFIG'
+          {
+            "agent": { "run_as_user": "root" },
+            "logs": {
+              "logs_collected": {
+                "files": {
+                  "collect_list": [
+                    {
+                      "file_path": "/home/ec2-user/.pm2/logs/cohort14-out.log",
+                      "log_group_name": "/cohort14/backend",
+                      "log_stream_name": "{instance_id}/stdout",
+                      "timestamp_format": "%Y-%m-%dT%H:%M:%S"
+                    },
+                    {
+                      "file_path": "/home/ec2-user/.pm2/logs/cohort14-error.log",
+                      "log_group_name": "/cohort14/backend",
+                      "log_stream_name": "{instance_id}/stderr",
+                      "timestamp_format": "%Y-%m-%dT%H:%M:%S"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+          CWCONFIG
+
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+            -a fetch-config \
+            -m ec2 \
+            -s \
+            -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+          systemctl enable amazon-cloudwatch-agent
+          systemctl start amazon-cloudwatch-agent
+
+          echo "UserData complete"
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-ec2
+
+  DataVolume:
+    Type: AWS::EC2::Volume
+    DeletionPolicy: Retain
+    Properties:
+      AvailabilityZone: !GetAtt Ec2Instance.AvailabilityZone
+      Size: !Ref EbsVolumeSize
+      VolumeType: gp3
+      Encrypted: true
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-data-volume
+        - Key: Backup
+          Value: "true"
+
+  DataVolumeAttachment:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      InstanceId: !Ref Ec2Instance
+      VolumeId: !Ref DataVolume
+      Device: /dev/xvdf
+
+  ElasticIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref Ec2Instance
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-eip
+
+  # EBS Snapshot lifecycle policy (14-day retention)
+  EbsSnapshotPolicy:
+    Type: AWS::DLM::LifecyclePolicy
+    Properties:
+      Description: !Sub "Daily EBS snapshots for cohort14-${Env} data volume — 14-day retention"
+      State: ENABLED
+      ExecutionRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/AWSDataLifecycleManagerDefaultRole"
+      PolicyDetails:
+        PolicyType: EBS_SNAPSHOT_MANAGEMENT
+        ResourceTypes:
+          - VOLUME
+        TargetTags:
+          - Key: Backup
+            Value: "true"
+        Schedules:
+          - Name: DailySnapshots
+            CreateRule:
+              Interval: 24
+              IntervalUnit: HOURS
+              Times:
+                - "02:00"
+            RetainRule:
+              Count: 14
+            CopyTags: true
+
+  # =========================================================================
+  # Phase 5 — ACM Certificate + ALB
+  # =========================================================================
+
+  ApiCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref ApiDomain
+      ValidationMethod: DNS
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-api-cert
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub cohort14-${Env}-alb
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-alb
+
+  BackendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub cohort14-${Env}-tg
+      Protocol: HTTP
+      Port: 4000
+      VpcId: !Ref VPC
+      TargetType: instance
+      Targets:
+        - Id: !Ref Ec2Instance
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: "4000"
+      HealthCheckPath: /graphql
+      # Apollo Server returns 400 on unauthenticated GET — still indicates process is up
+      Matcher:
+        HttpCode: "200-499"
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-tg
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref ApiCertificate
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref BackendTargetGroup
+
+  # =========================================================================
+  # Phase 6 — CloudWatch Logs + VPC Interface Endpoint
+  # =========================================================================
+
+  BackendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /cohort14/backend
+      RetentionInDays: 90
+
+  CloudWatchLogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+      PrivateDnsEnabled: true
+
+  # =========================================================================
+  # Phase 7 — Amplify App
+  # =========================================================================
+
+  AmplifyApp:
+    Type: AWS::Amplify::App
+    Properties:
+      Name: !Sub cohort14-${Env}-frontend
+      Repository: !Ref RepoUrl
+      AccessToken: !Ref AmplifyGitHubToken
+      BuildSpec: |
+        version: 1
+        frontend:
+          phases:
+            preBuild:
+              commands:
+                - cd frontend
+                - npm ci
+            build:
+              commands:
+                - npm run build
+          artifacts:
+            baseDirectory: frontend/dist
+            files:
+              - "**/*"
+          cache:
+            paths:
+              - frontend/node_modules/**/*
+      EnvironmentVariables:
+        - Name: VITE_GRAPHQL_URL
+          Value: !Sub "https://${ApiDomain}/graphql"
+        - Name: VITE_AUTH_URL
+          Value: !Sub "https://${ApiDomain}/auth"
+      Tags:
+        - Key: Name
+          Value: !Sub cohort14-${Env}-frontend
+
+  AmplifyBranchResource:
+    Type: AWS::Amplify::Branch
+    Properties:
+      AppId: !GetAtt AmplifyApp.AppId
+      BranchName: !Ref AmplifyBranch
+      EnableAutoBuild: true
+      Stage: PRODUCTION
+
+  # =========================================================================
+  # Phase 8 — Cognito User Pool
+  # =========================================================================
+
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub cohort14-${Env}-user-pool
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      PasswordPolicy:
+        MinimumLength: 12
+        RequireUppercase: true
+        RequireLowercase: true
+        RequireNumbers: true
+        RequireSymbols: true
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+      UserPoolTags:
+        Name: !Sub cohort14-${Env}-user-pool
+
+  CognitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub cohort14-${Env}
+      UserPoolId: !Ref CognitoUserPool
+
+  CognitoAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: cohort14-backend
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+      CallbackURLs:
+        - !Sub "https://${ApiDomain}/auth/cognito/callback"
+      LogoutURLs:
+        - !Sub "https://${FrontendDomain}"
+      SupportedIdentityProviders:
+        - COGNITO
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+# ---------------------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------------------
+Outputs:
+
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub cohort14-${Env}-VpcId
+
+  AlbDns:
+    Description: ALB DNS name — use as CNAME target for ApiDomain
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub cohort14-${Env}-AlbDns
+
+  ElasticIp:
+    Description: Elastic IP address of the EC2 instance
+    Value: !Ref ElasticIP
+    Export:
+      Name: !Sub cohort14-${Env}-ElasticIp
+
+  Ec2InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref Ec2Instance
+    Export:
+      Name: !Sub cohort14-${Env}-Ec2InstanceId
+
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID — set as COGNITO_USER_POOL_ID on EC2
+    Value: !Ref CognitoUserPool
+    Export:
+      Name: !Sub cohort14-${Env}-CognitoUserPoolId
+
+  CognitoClientId:
+    Description: Cognito App Client ID — set as COGNITO_CLIENT_ID on EC2
+    Value: !Ref CognitoAppClient
+    Export:
+      Name: !Sub cohort14-${Env}-CognitoClientId
+
+  CognitoDomain:
+    Description: Cognito Hosted UI base URL — set as COGNITO_DOMAIN on EC2
+    Value: !Sub "https://cohort14-${Env}.auth.${AWS::Region}.amazoncognito.com"
+    Export:
+      Name: !Sub cohort14-${Env}-CognitoDomain
+
+  CognitoRedirectUri:
+    Description: Cognito OAuth2 callback URL — set as COGNITO_REDIRECT_URI on EC2
+    Value: !Sub "https://${ApiDomain}/auth/cognito/callback"
+    Export:
+      Name: !Sub cohort14-${Env}-CognitoRedirectUri
+
+  AmplifyAppId:
+    Description: Amplify App ID
+    Value: !GetAtt AmplifyApp.AppId
+    Export:
+      Name: !Sub cohort14-${Env}-AmplifyAppId
+
+  AmplifyDefaultDomain:
+    Description: Amplify default HTTPS domain for the front end
+    Value: !Sub "${AmplifyBranch}.${AmplifyApp.DefaultDomain}"
+    Export:
+      Name: !Sub cohort14-${Env}-AmplifyDomain
+
+  DataVolumeId:
+    Description: EBS data volume ID (SQLite database)
+    Value: !Ref DataVolume
+    Export:
+      Name: !Sub cohort14-${Env}-DataVolumeId
+
+  BackendLogGroup:
+    Description: CloudWatch log group for back-end logs
+    Value: /cohort14/backend
+    Export:
+      Name: !Sub cohort14-${Env}-BackendLogGroup
