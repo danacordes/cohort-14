@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import { useMutation, useQuery } from '@apollo/client/react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -13,8 +14,10 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
+import AIInsightsPanel from '../../components/AIInsightsPanel.jsx';
 import KBDeflectionPanel from '../../components/tickets/KBDeflectionPanel.jsx';
 import { TICKET_CATEGORIES, CREATE_TICKET } from '../../graphql/tickets.js';
+import { selectRole } from '../../store/authSlice.js';
 
 /** Mirrors backend ALLOWED_MIME_TYPES in ticketAttachmentService.js */
 const ALLOWED_MIME = new Set([
@@ -31,6 +34,8 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 export default function TicketSubmitPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const role = useSelector(selectRole);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -45,6 +50,13 @@ export default function TicketSubmitPage() {
 
   const { data: catData } = useQuery(TICKET_CATEGORIES);
   const categories = catData?.ticketCategories?.filter((c) => c.isActive) ?? [];
+
+  useEffect(() => {
+    const s = location.state;
+    if (!s) return;
+    if (s.prefillTitle) setTitle(String(s.prefillTitle));
+    if (s.prefillDescription) setDescription(String(s.prefillDescription));
+  }, [location.state]);
 
   const [createTicket, { loading }] = useMutation(CREATE_TICKET, {
     onCompleted(res) {
@@ -195,6 +207,14 @@ export default function TicketSubmitPage() {
               minRows={5}
               error={Boolean(fieldErrors.description)}
               helperText={fieldErrors.description}
+            />
+
+            <AIInsightsPanel
+              mode="submit"
+              role={role}
+              title={title}
+              description={description}
+              onAcceptCategory={setCategoryId}
             />
 
             <FormControl fullWidth>

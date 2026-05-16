@@ -11,6 +11,7 @@ import KBArticlePage from './pages/kb/KBArticlePage.jsx';
 import KBArticleEditorPage from './pages/kb/KBArticleEditorPage.jsx';
 import KBReviewPage from './pages/kb/KBReviewPage.jsx';
 import KBAdminDashboard from './pages/kb/KBAdminDashboard.jsx';
+import VirtualAgentPage from './pages/kb/VirtualAgentPage.jsx';
 import DashboardPage from './pages/reporting/DashboardPage.jsx';
 import ReportPage from './pages/reporting/ReportPage.jsx';
 import TicketSubmitPage from './pages/tickets/TicketSubmitPage.jsx';
@@ -49,6 +50,14 @@ function App() {
             element={
               <ErrorBoundary>
                 <KBSearchPage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/kb/assistant"
+            element={
+              <ErrorBoundary>
+                <VirtualAgentPage />
               </ErrorBoundary>
             }
           />

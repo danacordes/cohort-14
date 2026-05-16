@@ -96,6 +96,11 @@ function Dashboard() {
           description="Find articles and solutions"
           onClick={() => navigate('/kb')}
         />
+        <NavCard
+          label="Virtual agent"
+          description="Ask questions grounded in published KB articles"
+          onClick={() => navigate('/kb/assistant')}
+        />
         {(role === 'agent' || role === 'admin') && (
           <NavCard
             label="New Article"
