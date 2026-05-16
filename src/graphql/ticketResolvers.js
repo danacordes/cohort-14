@@ -240,8 +240,8 @@ const Query = {
       conditions.push('t.submitter_ref = ?');
       params.push(user.id);
     } else if (user.role === 'agent') {
-      // Agents always see only their assigned tickets — server-enforced, not overridable
-      conditions.push('t.assigned_to = ?');
+      // Pool for self-service: unclaimed tickets plus this agent's assignments (REQ-TQA-003.4)
+      conditions.push('(t.assigned_to IS NULL OR t.assigned_to = ?)');
       params.push(user.id);
     } else if (filter.submitterRef) {
       conditions.push('t.submitter_ref = ?');
@@ -260,9 +260,13 @@ const Query = {
       conditions.push('t.category_id = ?');
       params.push(filter.categoryId);
     }
-    if (filter.assignedTo) {
-      conditions.push('t.assigned_to = ?');
-      params.push(filter.assignedTo);
+    if (user.role === 'admin') {
+      if (filter.assignedTo) {
+        conditions.push('t.assigned_to = ?');
+        params.push(filter.assignedTo);
+      } else if (filter.unassignedOnly === true) {
+        conditions.push('t.assigned_to IS NULL');
+      }
     }
     if (filter.search) {
       conditions.push(

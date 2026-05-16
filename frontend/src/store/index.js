@@ -3,6 +3,7 @@ import errorsReducer from './errorsSlice.js';
 import authReducer from './authSlice.js';
 import kbReducer from './kbSlice.js';
 import reportingReducer from './reportingSlice.js';
+import ticketQueueReducer from './ticketQueueSlice.js';
 
 const store = configureStore({
   reducer: {
@@ -10,6 +11,7 @@ const store = configureStore({
     errors: errorsReducer,
     kb: kbReducer,
     reporting: reportingReducer,
+    ticketQueue: ticketQueueReducer,
   },
 });
 

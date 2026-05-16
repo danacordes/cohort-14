@@ -57,6 +57,13 @@ function Dashboard() {
           }
           onClick={() => navigate('/tickets')}
         />
+        {(role === 'agent' || role === 'admin') && (
+          <NavCard
+            label="Service desk queue"
+            description="Unassigned pool, filters, assignment"
+            onClick={() => navigate('/desk/queue')}
+          />
+        )}
       </Stack>
 
       <Divider sx={{ mb: 3 }} />

@@ -81,3 +81,59 @@ export const RECORD_DEFLECTION = gql`
     }
   }
 `;
+
+export const QUEUE_TICKETS = gql`
+  query QueueTickets($filter: TicketFilterInput, $sort: TicketSortInput, $page: Int, $pageSize: Int) {
+    tickets(filter: $filter, sort: $sort, page: $page, pageSize: $pageSize) {
+      totalCount
+      page
+      pageSize
+      edges {
+        node {
+          id
+          publicNumber
+          title
+          status
+          priority
+          assignedTo
+          category {
+            id
+            name
+          }
+          createdAt
+          updatedAt
+        }
+      }
+    }
+  }
+`;
+
+export const AGENT_WORKLOAD = gql`
+  query AgentWorkload {
+    agentWorkload {
+      agentId
+      agentName
+      openTicketCount
+    }
+  }
+`;
+
+export const ASSIGN_TICKET = gql`
+  mutation AssignTicket($ticketId: ID!, $agentId: ID!) {
+    assignTicket(ticketId: $ticketId, agentId: $agentId) {
+      id
+      publicNumber
+      assignedTo
+    }
+  }
+`;
+
+export const SELF_ASSIGN_TICKET = gql`
+  mutation SelfAssignTicket($ticketId: ID!) {
+    selfAssignTicket(ticketId: $ticketId) {
+      id
+      publicNumber
+      assignedTo
+    }
+  }
+`;

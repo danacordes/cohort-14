@@ -16,6 +16,7 @@ import ReportPage from './pages/reporting/ReportPage.jsx';
 import TicketSubmitPage from './pages/tickets/TicketSubmitPage.jsx';
 import MyTicketsPage from './pages/tickets/MyTicketsPage.jsx';
 import TicketDetailPage from './pages/tickets/TicketDetailPage.jsx';
+import TicketQueuePage from './pages/tickets/TicketQueuePage.jsx';
 
 function App() {
   return (
@@ -127,6 +128,14 @@ function App() {
             element={
               <ErrorBoundary>
                 <TicketDetailPage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/desk/queue"
+            element={
+              <ErrorBoundary>
+                <TicketQueuePage />
               </ErrorBoundary>
             }
           />

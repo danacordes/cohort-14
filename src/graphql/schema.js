@@ -238,6 +238,8 @@ export const typeDefs = `#graphql
     priority: TicketPriorityEnum
     categoryId: ID
     assignedTo: ID
+    """When true (admin only), return only tickets with no assignee."""
+    unassignedOnly: Boolean
     submitterRef: ID
     search: String
   }
