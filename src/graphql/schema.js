@@ -1,3 +1,6 @@
+import { ticketResolvers } from './ticketResolvers.js';
+import { kbResolvers } from './kbResolvers.js';
+
 export const typeDefs = `#graphql
 
   # ─── Enums ────────────────────────────────────────────────────────────────
@@ -221,6 +224,77 @@ export const typeDefs = `#graphql
     occurredAt: String!
   }
 
+  # ─── Knowledge Base (WO-12 search + admin metrics) ───────────────────────
+
+  type KBSearchCategoryRef {
+    id: ID!
+    name: String!
+  }
+
+  type KBSearchAuthorRef {
+    id: ID!
+    email: String!
+  }
+
+  type KBSearchHit {
+    id: ID!
+    number: String!
+    title: String!
+    articleType: String!
+    status: String!
+    category: KBSearchCategoryRef
+    tags: [String!]!
+    excerpt: String!
+    updatedAt: String!
+    author: KBSearchAuthorRef
+  }
+
+  input KBSearchFilters {
+    categoryId: ID
+    articleType: String
+    status: String
+    updatedAfter: String
+    updatedBefore: String
+  }
+
+  type KBSearchResultPage {
+    items: [KBSearchHit!]!
+    totalCount: Int!
+    page: Int!
+    pageSize: Int!
+    suggestions: [String!]!
+  }
+
+  type KBMetricsArticleRef {
+    id: ID!
+    number: String!
+    title: String!
+  }
+
+  type KBTopViewedStat {
+    article: KBMetricsArticleRef!
+    viewCount: Int!
+  }
+
+  type KBFeedbackTrendStat {
+    article: KBMetricsArticleRef!
+    helpfulCount: Int!
+    notHelpfulCount: Int!
+    netScore: Int!
+  }
+
+  type KBCoverageGapStat {
+    article: KBMetricsArticleRef!
+    reason: String!
+  }
+
+  type KBAdminMetricsPayload {
+    topViewed: [KBTopViewedStat!]!
+    deflectionCount: Int!
+    feedbackTrends: [KBFeedbackTrendStat!]!
+    coverageGaps: [KBCoverageGapStat!]!
+  }
+
   # ─── Ticket ───────────────────────────────────────────────────────────────
 
   type Ticket {
@@ -318,6 +392,9 @@ export const typeDefs = `#graphql
     """
     summarizeTicket(ticketId: ID!): String
 
+    kbSearch(query: String!, filters: KBSearchFilters, page: PaginationInput): KBSearchResultPage!
+    kbAdminMetrics(period: String!): KBAdminMetricsPayload!
+
     closureConfig: ClosureConfig!
     holidays: [Holiday!]!
     slaConfig: SLAPolicyConfig!
@@ -364,4 +441,10 @@ export const typeDefs = `#graphql
   }
 `;
 
-export { ticketResolvers as resolvers } from './ticketResolvers.js';
+
+
+export const resolvers = {
+  Query: { ...ticketResolvers.Query, ...kbResolvers.Query },
+  Mutation: { ...ticketResolvers.Mutation },
+  Ticket: ticketResolvers.Ticket,
+};
