@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@apollo/client/react';
 import { useSelector } from 'react-redux';
 import Alert from '@mui/material/Alert';
+import Chip from '@mui/material/Chip';
 import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
@@ -21,16 +22,32 @@ import {
 import { AUDIT_LOG } from '../graphql/audit.js';
 import { selectRole } from '../store/authSlice.js';
 
-function ActorLine({ actorName, actorId }) {
+function ActorLine({ actorName, actorId, actorKind, aiConfidence, aiFeature }) {
+  const isAi = actorKind === 'AI_SYSTEM';
   const label = actorName?.trim()
     ? actorName
     : actorId && actorId.length > 14
       ? `${actorId.slice(0, 10)}…`
       : actorId ?? '—';
   return (
-    <Typography variant="caption" color="text.secondary">
-      {label}
-    </Typography>
+    <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.5} sx={{ mt: 0.5 }}>
+      {isAi && <Chip size="small" label="AI" color="info" variant="outlined" />}
+      <Typography variant="caption" color="text.secondary">
+        {label}
+      </Typography>
+      {isAi && aiFeature ? (
+        <Typography variant="caption" color="text.secondary">
+          · {aiFeature}
+        </Typography>
+      ) : null}
+      {isAi && aiConfidence != null && !Number.isNaN(Number(aiConfidence)) ? (
+        <Chip
+          size="small"
+          label={`${Math.round(Number(aiConfidence) * 100)}%`}
+          variant="outlined"
+        />
+      ) : null}
+    </Stack>
   );
 }
 
@@ -153,7 +170,13 @@ export default function AuditLogView({ entityType, entityId }) {
                     {entry.occurredAt}
                   </Typography>
                 </Stack>
-                <ActorLine actorName={entry.actorName} actorId={entry.actorId} />
+                <ActorLine
+                  actorName={entry.actorName}
+                  actorId={entry.actorId}
+                  actorKind={entry.actorKind}
+                  aiConfidence={entry.aiConfidence}
+                  aiFeature={entry.aiFeature}
+                />
                 <EntryChanges previousValues={entry.previousValues} newValues={entry.newValues} />
               </Paper>
             ))}

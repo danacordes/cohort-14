@@ -2,6 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { ForbiddenError } from '../errors/index.js';
+import { SYSTEM_AI_USER_ID } from '../constants/systemUsers.js';
 
 /**
  * Inline the auditLog resolver logic for unit testing without spinning up
@@ -58,12 +59,18 @@ function buildDb() {
       actor_id TEXT NOT NULL,
       previous_values TEXT NOT NULL DEFAULT '{}',
       new_values TEXT NOT NULL DEFAULT '{}',
-      occurred_at TEXT NOT NULL DEFAULT (datetime('now'))
+      occurred_at TEXT NOT NULL DEFAULT (datetime('now')),
+      actor_kind TEXT NOT NULL DEFAULT 'human' CHECK (actor_kind IN ('human', 'ai_system')),
+      ai_confidence REAL,
+      ai_feature TEXT
     );
   `);
 
   db.prepare(`INSERT INTO users VALUES ('u1', 'agent@example.com', 'agent')`).run();
   db.prepare(`INSERT INTO users VALUES ('u2', 'admin@example.com', 'admin')`).run();
+  db.prepare(
+    `INSERT INTO users VALUES (?, 'ai-system@platform.internal', 'user')`
+  ).run(SYSTEM_AI_USER_ID);
 
   // Insert 30 audit entries for entity 'Ticket' / 'ticket-1'
   for (let i = 1; i <= 30; i++) {
@@ -79,11 +86,11 @@ function buildDb() {
      VALUES ('other-1', 'KBArticle', 'article-1', 'created', 'u2')`
   ).run();
 
-  // Insert 1 entry with system actor (no user row)
+  // Insert 1 AI-attributed entry (uses platform AI user id + actor_kind)
   db.prepare(
-    `INSERT INTO audit_entries (id, entity_type, entity_id, action, actor_id)
-     VALUES ('sys-1', 'Ticket', 'ticket-2', 'auto_closed', 'system')`
-  ).run();
+    `INSERT INTO audit_entries (id, entity_type, entity_id, action, actor_id, actor_kind, ai_confidence, ai_feature)
+     VALUES ('sys-1', 'Ticket', 'ticket-2', 'category_suggested', ?, 'ai_system', 0.85, 'classification')`
+  ).run(SYSTEM_AI_USER_ID);
 
   return db;
 }
@@ -142,10 +149,13 @@ describe('auditLog resolver', () => {
     assert.equal(result.items[0].actor_name, 'agent@example.com');
   });
 
-  it('actorName is null for system actor (no matching user row)', () => {
+  it('exposes actor_kind and AI metadata for AI-attributed rows', () => {
     const result = auditLog(db, { entityType: 'Ticket', entityId: 'ticket-2' }, { role: 'admin' });
     assert.equal(result.totalCount, 1);
-    assert.equal(result.items[0].actor_name, null);
+    assert.equal(result.items[0].actor_kind, 'ai_system');
+    assert.equal(result.items[0].ai_confidence, 0.85);
+    assert.equal(result.items[0].ai_feature, 'classification');
+    assert.equal(result.items[0].actor_name, 'ai-system@platform.internal');
   });
 
   it('denies user role', () => {

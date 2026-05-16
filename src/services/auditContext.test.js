@@ -1,7 +1,8 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { audit } from './auditContext.js';
+import { audit, auditAiAction } from './auditContext.js';
+import { SYSTEM_AI_USER_ID } from '../constants/systemUsers.js';
 
 function createTestDb() {
   const db = new DatabaseSync(':memory:');
@@ -14,7 +15,10 @@ function createTestDb() {
       actor_id TEXT NOT NULL,
       previous_values TEXT NOT NULL DEFAULT '{}',
       new_values TEXT NOT NULL DEFAULT '{}',
-      occurred_at TEXT NOT NULL DEFAULT (datetime('now'))
+      occurred_at TEXT NOT NULL DEFAULT (datetime('now')),
+      actor_kind TEXT NOT NULL DEFAULT 'human' CHECK (actor_kind IN ('human', 'ai_system')),
+      ai_confidence REAL,
+      ai_feature TEXT
     );
 
     CREATE TRIGGER audit_entries_no_update
@@ -61,6 +65,25 @@ describe('audit()', () => {
     assert.equal(row.actor_id, 'user-uuid-1');
     assert.equal(row.new_values, JSON.stringify({ status: 'OPEN' }));
     assert.match(row.id, /^[0-9a-f-]{36}$/);
+    assert.equal(row.actor_kind, 'human');
+  });
+
+  it('records AI-attributed audits with system actor and metadata', () => {
+    auditAiAction(db, {
+      entityType: 'Ticket',
+      entityId: 'ticket-ai-1',
+      action: 'category_suggested',
+      actorId: 'ignored',
+      previousValues: {},
+      newValues: { categoryId: 'c1' },
+      aiConfidence: 0.91,
+      aiFeature: 'classification',
+    });
+    const row = db.prepare('SELECT * FROM audit_entries WHERE entity_id = ?').get('ticket-ai-1');
+    assert.equal(row.actor_id, SYSTEM_AI_USER_ID);
+    assert.equal(row.actor_kind, 'ai_system');
+    assert.equal(row.ai_confidence, 0.91);
+    assert.equal(row.ai_feature, 'classification');
   });
 
   it('inserts multiple entries for the same entity', () => {

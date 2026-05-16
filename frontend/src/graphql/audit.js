@@ -10,6 +10,9 @@ export const AUDIT_LOG = gql`
         action
         actorId
         actorName
+        actorKind
+        aiConfidence
+        aiFeature
         previousValues
         newValues
         occurredAt

@@ -1,5 +1,7 @@
 # React + Vite
 
+**Docs:** [AI governance & audit / override framework](../docs/technical-note-ai-governance.md) (WO #11 technical note).
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

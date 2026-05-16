@@ -21,6 +21,13 @@ async function rmIfExists(file) {
     try {
       runPendingMigrations(db);
 
+      db.prepare(
+        `INSERT INTO users (id, email, role, password_hash) VALUES ('user-subject-1', 'user@verify.local', 'user', NULL)`
+      ).run();
+      db.prepare(
+        `INSERT INTO users (id, email, role, password_hash) VALUES ('actor-1', 'actor@verify.local', 'agent', NULL)`
+      ).run();
+
       const statusCount = db.prepare('SELECT COUNT(*) AS n FROM ticket_status').get().n;
       const prioCount = db.prepare('SELECT COUNT(*) AS n FROM ticket_priority').get().n;
       assert(statusCount === 5, `expected 5 ticket_status rows, got ${statusCount}`);

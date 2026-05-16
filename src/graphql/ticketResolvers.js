@@ -177,13 +177,18 @@ function mapDeflectionEvent(row) {
 
 /** Map a raw audit_entries row to the GraphQL AuditEntry shape. */
 function mapAuditEntry(row) {
+  const rawKind = row.actor_kind ?? 'human';
+  const isAi = rawKind === 'ai_system';
   return {
     id: row.id,
     entityType: row.entity_type,
     entityId: row.entity_id,
     action: row.action,
     actorId: row.actor_id,
-    actorName: row.actor_name ?? null,
+    actorName: isAi ? 'AI system' : (row.actor_name ?? null),
+    actorKind: isAi ? 'AI_SYSTEM' : 'HUMAN',
+    aiConfidence: row.ai_confidence != null ? Number(row.ai_confidence) : null,
+    aiFeature: row.ai_feature ?? null,
     previousValues: row.previous_values,
     newValues: row.new_values,
     occurredAt: row.occurred_at,
@@ -636,6 +641,157 @@ const Mutation = {
     });
 
     return mapTicket(getTicketOrThrow(db, id));
+  },
+
+  overrideTicketAiAction(_parent, { input }, { user }) {
+    requireRole(user, 'agent', 'admin');
+    const { ticketId, field, categoryId, agentId, priority, supersedesAuditEntryId } = input;
+    const db = getWriteDb();
+    const ticket = getTicketOrThrow(db, ticketId);
+
+    if (supersedesAuditEntryId) {
+      const ref = db
+        .prepare(`SELECT entity_type, entity_id, actor_kind FROM audit_entries WHERE id = ?`)
+        .get(supersedesAuditEntryId);
+      if (!ref || ref.entity_type !== 'Ticket' || ref.entity_id !== ticketId) {
+        throw new ValidationError(
+          'supersedesAuditEntryId does not reference an audit row for this ticket'
+        );
+      }
+      if (ref.actor_kind !== 'ai_system') {
+        throw new ValidationError('Referenced audit entry is not an AI-attributed action');
+      }
+    }
+
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      let previousValues = { field };
+      let newValues = { field };
+
+      if (field === 'CATEGORY') {
+        if (categoryId === undefined) {
+          throw new ValidationError('categoryId is required for CATEGORY (pass null to clear)');
+        }
+        if (categoryId) {
+          const cat = db.prepare(
+            'SELECT id FROM ticket_category WHERE id = ? AND is_active = 1'
+          ).get(categoryId);
+          if (!cat) throw new ValidationError(`Category ${categoryId} not found or inactive`);
+        }
+        const prevCat = ticket.category_id ?? null;
+        db.prepare(`UPDATE ticket SET category_id = ?, updated_at = datetime('now') WHERE id = ?`).run(
+          categoryId ?? null,
+          ticketId
+        );
+        previousValues = { ...previousValues, categoryId: prevCat };
+        newValues = { ...newValues, categoryId: categoryId ?? null };
+      } else if (field === 'PRIORITY') {
+        if (!priority) {
+          throw new ValidationError('priority is required for PRIORITY override');
+        }
+        if (['RESOLVED', 'CLOSED'].includes(ticket.status_code)) {
+          throw new ValidationError('Cannot change priority of a resolved or closed ticket');
+        }
+        const priorityId = priorityIdByCode(db, priority);
+        const now = new Date();
+        const priorSLAState = {
+          priority: ticket.priority_code,
+          slaResponseDueAt: ticket.sla_response_due_at ?? null,
+          slaResolutionDueAt: ticket.sla_resolution_due_at ?? null,
+          slaResponseBreachedAt: ticket.sla_response_breached_at ?? null,
+          slaResolutionBreachedAt: ticket.sla_resolution_breached_at ?? null,
+        };
+        const slaPolicy = getPolicyForPriority(db, priority);
+        const { responseDue, resolutionDue } = recalculateDueDates(priority, now, slaPolicy);
+
+        db.prepare(
+          `UPDATE ticket
+           SET priority_id = ?,
+               sla_response_due_at = ?,
+               sla_resolution_due_at = ?,
+               sla_response_breached_at = NULL,
+               sla_resolution_breached_at = NULL,
+               sla_responded_at = NULL,
+               updated_at = datetime('now')
+           WHERE id = ?`
+        ).run(priorityId, responseDue, resolutionDue, ticketId);
+
+        previousValues = { ...previousValues, ...priorSLAState };
+        newValues = {
+          ...newValues,
+          priority,
+          slaResponseDueAt: responseDue,
+          slaResolutionDueAt: resolutionDue,
+        };
+      } else if (field === 'ASSIGNMENT') {
+        if (!agentId) {
+          throw new ValidationError('agentId is required for ASSIGNMENT override');
+        }
+        if (['RESOLVED', 'CLOSED'].includes(ticket.status_code)) {
+          throw new ValidationError('Cannot assign a resolved or closed ticket');
+        }
+        if (user.role === 'agent') {
+          if (agentId !== user.id) {
+            throw new ForbiddenError('Agents may only override assignment to themselves');
+          }
+          if (ticket.assigned_to != null && ticket.assigned_to !== user.id) {
+            throw new ValidationError(
+              'Ticket is assigned to another agent; an admin must perform reassignment'
+            );
+          }
+        }
+        const agentRow = db.prepare(`SELECT id, email, role FROM users WHERE id = ?`).get(agentId);
+        if (!agentRow || agentRow.role !== 'agent') {
+          throw new ValidationError(`Agent ${agentId} not found or is not an agent`);
+        }
+
+        const previousAssignee = ticket.assigned_to;
+        db.prepare(`UPDATE ticket SET assigned_to = ?, updated_at = datetime('now') WHERE id = ?`).run(
+          agentId,
+          ticketId
+        );
+        previousValues = { ...previousValues, assignedTo: previousAssignee ?? null };
+        newValues = { ...newValues, assignedTo: agentId };
+
+        if (previousAssignee) {
+          dispatch(Events.TICKET_REASSIGNED, {
+            ticketId,
+            assignedTo: agentId,
+            assignedBy: user.id,
+            previousAssignee,
+          });
+        } else {
+          dispatch(Events.TICKET_ASSIGNED, {
+            ticketId,
+            assignedTo: agentId,
+            assignedBy: user.id,
+          });
+        }
+      } else {
+        throw new ValidationError(`Unknown override field: ${field}`);
+      }
+
+      if (supersedesAuditEntryId) {
+        previousValues = { ...previousValues, supersedesAuditEntryId };
+        newValues = { ...newValues, supersedesAuditEntryId };
+      }
+
+      audit(db, {
+        entityType: 'Ticket',
+        entityId: ticketId,
+        action: 'ai_action_overridden',
+        actorId: user.id,
+        previousValues,
+        newValues,
+      });
+
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+
+    return mapTicket(getTicketOrThrow(db, ticketId));
   },
 
   reopenTicket(_parent, { id }, { user }) {

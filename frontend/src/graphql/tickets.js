@@ -153,6 +153,22 @@ export const REOPEN_TICKET = gql`
   }
 `;
 
+export const OVERRIDE_TICKET_AI = gql`
+  mutation OverrideTicketAi($input: OverrideTicketAiInput!) {
+    overrideTicketAiAction(input: $input) {
+      id
+      publicNumber
+      priority
+      assignedTo
+      category {
+        id
+        name
+      }
+      updatedAt
+    }
+  }
+`;
+
 export const SUBMIT_CSAT_RESPONSE = gql`
   mutation SubmitCsatResponse($token: String!, $rating: Int!, $comment: String) {
     submitCSATResponse(token: $token, rating: $rating, comment: $comment) {

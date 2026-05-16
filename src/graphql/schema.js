@@ -30,6 +30,17 @@ export const typeDefs = `#graphql
     DESC
   }
 
+  enum AuditActorKind {
+    HUMAN
+    AI_SYSTEM
+  }
+
+  enum TicketAiOverrideField {
+    CATEGORY
+    ASSIGNMENT
+    PRIORITY
+  }
+
   # ─── Reference types ──────────────────────────────────────────────────────
 
   type TicketCategory {
@@ -48,6 +59,12 @@ export const typeDefs = `#graphql
     action: String!
     actorId: String!
     actorName: String
+    """Distinguishes AI system actions from human actors in the audit trail."""
+    actorKind: AuditActorKind!
+    """Confidence score for AI-attributed actions (0–1), when recorded."""
+    aiConfidence: Float
+    """Logical AI feature area (e.g. classification, routing), when recorded."""
+    aiFeature: String
     previousValues: String!
     newValues: String!
     occurredAt: String!
@@ -63,6 +80,19 @@ export const typeDefs = `#graphql
   input PaginationInput {
     page: Int
     pageSize: Int
+  }
+
+  input OverrideTicketAiInput {
+    ticketId: ID!
+    field: TicketAiOverrideField!
+    """Use with field CATEGORY — omit or null to clear category."""
+    categoryId: ID
+    """Use with field ASSIGNMENT — must be a valid agent user id."""
+    agentId: ID
+    """Use with field PRIORITY."""
+    priority: TicketPriorityEnum
+    """Optional link to a prior AI audit row this override supersedes."""
+    supersedesAuditEntryId: ID
   }
 
   # ─── Attachments ─────────────────────────────────────────────────────────
@@ -286,6 +316,8 @@ export const typeDefs = `#graphql
     ): Ticket!
     updateTicketPriority(id: ID!, priority: TicketPriorityEnum!): Ticket!
     updateTicketCategory(id: ID!, categoryId: ID): Ticket!
+    """Apply a human correction over an AI suggestion or routing decision; records `ai_action_overridden` in the audit trail."""
+    overrideTicketAiAction(input: OverrideTicketAiInput!): Ticket!
     reopenTicket(id: ID!): Ticket!
 
     createTicketCategory(input: CreateCategoryInput!): TicketCategory!

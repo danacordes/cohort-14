@@ -12,6 +12,7 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
+import AiSuggestionPanel from '../../components/AiSuggestionPanel.jsx';
 import AuditLogView from '../../components/AuditLogView.jsx';
 import SLAIndicator from '../../components/SLAIndicator.jsx';
 import { TICKET_POLL_INTERVAL_MS } from '../../constants/ticketPolling.js';
@@ -349,6 +350,10 @@ export default function TicketDetailPage() {
                 Reopen ticket
               </Button>
             </Paper>
+          )}
+
+          {deskRole && id && (
+            <AiSuggestionPanel caption="When AI features suggest categories, routing, or summaries, they appear here with a confidence score. Use Override to apply your correction; the audit trail records who overrode the AI." />
           )}
 
           {id && <AuditLogView entityType="Ticket" entityId={id} />}
