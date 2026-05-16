@@ -18,6 +18,9 @@ This directory contains the CloudFormation template and supporting config files 
    - A **CNAME** record for `ApiDomain` pointing to the ALB DNS output (for ACM validation and API routing).
 4. **GitHub Personal Access Token** (or equivalent) with `repo` scope — passed as `AmplifyGitHubToken`.
 5. **AWSDataLifecycleManagerDefaultRole** IAM role must exist in the account (auto-created by AWS when you first use DLM in the console; or create manually).
+6. **Amazon Bedrock** — enable **Claude 3 Haiku** and **Titan Text Embeddings V2** access (console → Bedrock → Model access) in the deployment region before calling `InvokeModel`.
+
+The EC2 IAM role grants **`bedrock:InvokeModel`** only for foundation models `anthropic.claude-3-haiku-20240307-v1:0` and `amazon.titan-embed-text-v2:0` (see **`BedrockFoundationModelsInvoke`** in `cohort14-infra.yaml`).
 
 ## Deployment
 

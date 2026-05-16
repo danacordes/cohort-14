@@ -47,4 +47,6 @@ Do not invent ad hoc actor IDs for “the AI” in application code.
 | Client ops | `frontend/src/graphql/audit.js`, `frontend/src/graphql/tickets.js` (`OVERRIDE_TICKET_AI`) |
 | UI         | `frontend/src/components/AuditLogView.jsx`, `frontend/src/components/AiSuggestionPanel.jsx` |
 
-When adding a new AI capability (classification, summarization, virtual agent, etc.), call **`auditAiAction()`** for AI-originated mutations and surface suggestions through **`AiSuggestionPanel`** (or equivalent) with **`overrideTicketAiAction`** wired to the relevant field.
+
+When implementing **Bedrock** calls or vector storage, follow **[LLM client & embeddings (Bedrock)](technical-note-llm-bedrock.md)** (WO #36).
+

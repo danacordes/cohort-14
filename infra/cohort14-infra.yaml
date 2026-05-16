@@ -305,6 +305,16 @@ Resources:
                 Condition:
                   StringEquals:
                     ses:FromAddress: !Sub "noreply@${FrontendDomain}"
+        - PolicyName: BedrockFoundationModelsInvoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource:
+                  - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
+                  - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0"
       Tags:
         - Key: Name
           Value: !Sub cohort14-${Env}-ec2-role
