@@ -8,6 +8,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import authReducer from '../store/authSlice.js';
 import errorsReducer from '../store/errorsSlice.js';
 import kbReducer from '../store/kbSlice.js';
+import reportingReducer from '../store/reportingSlice.js';
 import theme from '../theme.js';
 
 export function buildStore(preloadedState = {}) {
@@ -16,6 +17,7 @@ export function buildStore(preloadedState = {}) {
       auth: authReducer,
       errors: errorsReducer,
       kb: kbReducer,
+      reporting: reportingReducer,
     },
     preloadedState,
   });

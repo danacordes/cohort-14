@@ -13,6 +13,9 @@ import KBReviewPage from './pages/kb/KBReviewPage.jsx';
 import KBAdminDashboard from './pages/kb/KBAdminDashboard.jsx';
 import DashboardPage from './pages/reporting/DashboardPage.jsx';
 import ReportPage from './pages/reporting/ReportPage.jsx';
+import TicketSubmitPage from './pages/tickets/TicketSubmitPage.jsx';
+import MyTicketsPage from './pages/tickets/MyTicketsPage.jsx';
+import TicketDetailPage from './pages/tickets/TicketDetailPage.jsx';
 
 function App() {
   return (
@@ -98,6 +101,32 @@ function App() {
             element={
               <ErrorBoundary>
                 <ReportPage />
+              </ErrorBoundary>
+            }
+          />
+
+          {/* Ticket submission & submitter portal */}
+          <Route
+            path="/tickets"
+            element={
+              <ErrorBoundary>
+                <MyTicketsPage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/tickets/submit"
+            element={
+              <ErrorBoundary>
+                <TicketSubmitPage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/tickets/:id"
+            element={
+              <ErrorBoundary>
+                <TicketDetailPage />
               </ErrorBoundary>
             }
           />

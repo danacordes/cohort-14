@@ -7,7 +7,7 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { selectRole } from '../store/authSlice.js';
 
-function NavCard({ label, description, path, onClick }) {
+function NavCard({ label, description, onClick }) {
   return (
     <Button
       variant="outlined"
@@ -38,6 +38,26 @@ function Dashboard() {
       <Typography variant="body1" color="text.secondary" mb={3}>
         Welcome. Use the shortcuts below to navigate the portal.
       </Typography>
+
+      <Divider sx={{ mb: 3 }} />
+
+      <Typography variant="h6" fontWeight={600} mb={2}>Tickets</Typography>
+      <Stack direction="row" spacing={2} flexWrap="wrap" mb={4}>
+        <NavCard
+          label="Submit a ticket"
+          description="Report an issue or request help"
+          onClick={() => navigate('/tickets/submit')}
+        />
+        <NavCard
+          label="My tickets"
+          description={
+            role === 'user'
+              ? 'Tickets you submitted'
+              : 'Tickets assigned to you'
+          }
+          onClick={() => navigate('/tickets')}
+        />
+      </Stack>
 
       <Divider sx={{ mb: 3 }} />
 
