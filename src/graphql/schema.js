@@ -379,6 +379,11 @@ export const typeDefs = `#graphql
     linkedAt: String!
   }
 
+  type VirtualAgentResponse {
+    answer: String!
+    sourceArticles: [KBArticle!]!
+  }
+
   type KBArticle {
     id: ID!
     number: String!
@@ -506,6 +511,11 @@ export const typeDefs = `#graphql
 
     kbArticle(id: ID!): KBArticle
     kbArticleVersions(id: ID!): [KBArticleVersion!]!
+    """
+    KB-grounded RAG answer (WO #38). All authenticated roles. Always returns an answer;
+    sourceArticles empty when no relevant published content or AI unavailable.
+    """
+    virtualAgent(query: String!): VirtualAgentResponse!
 
     closureConfig: ClosureConfig!
     holidays: [Holiday!]!

@@ -3,6 +3,13 @@ import { getReadDb, getWriteDb } from '../db/pool.js';
 import { ForbiddenError, ValidationError } from '../errors/index.js';
 import { kbSearchArticles } from '../services/kb/kbSearchService.js';
 import { kbAdminMetrics } from '../services/kb/kbMetricsService.js';
+import { getSharedLLMClient } from '../services/ai/llmSingleton.js';
+import { persistKbArticleEmbeddingNonFatal } from '../services/ai/kbArticleEmbedding.js';
+import {
+  answerVirtualAgentQuery,
+  VIRTUAL_AGENT_LLM_UNAVAILABLE_ANSWER,
+  virtualAgentFallbackResponse,
+} from '../services/ai/virtualAgentService.js';
 import {
   archiveKbArticle,
   adminPublishKbArticle,
@@ -22,6 +29,12 @@ import {
   updateKbArticle,
   upsertKbArticleFeedback,
 } from '../services/kb/kbArticleMgmtService.js';
+
+async function embedPublishedKbArticleNonFatal(articleId, title, body) {
+  const db = getWriteDb();
+  const llm = getSharedLLMClient();
+  await persistKbArticleEmbeddingNonFatal(db, llm, articleId, title, body);
+}
 
 function requireAuth(user) {
   if (!user) throw new ForbiddenError('Authentication required');
@@ -109,6 +122,31 @@ export const kbResolvers = {
         createdAt: v.created_at,
       }));
     },
+
+    async virtualAgent(_parent, { query }, { user }) {
+      requireAuth(user);
+      if (!(query ?? '').trim()) {
+        throw new ValidationError('Query cannot be empty');
+      }
+      const db = getReadDb();
+      const llm = getSharedLLMClient();
+      try {
+        return await answerVirtualAgentQuery(llm, db, query);
+      } catch (err) {
+        const msg =
+          typeof err === 'object' && err !== null && 'message' in err
+            ? String(/** @type {{ message?: unknown }} */ (err).message)
+            : String(err);
+        console.error(
+          JSON.stringify({
+            level: 'warn',
+            msg: 'virtual_agent_failed',
+            error: msg.slice(0, 500),
+          }),
+        );
+        return virtualAgentFallbackResponse(VIRTUAL_AGENT_LLM_UNAVAILABLE_ANSWER);
+      }
+    },
   },
 
   Mutation: {
@@ -118,10 +156,13 @@ export const kbResolvers = {
       return mapKbArticleGraphql(db, createKbArticle(db, user, input));
     },
 
-    updateKbArticle(_parent, { id, input }, { user }) {
+    async updateKbArticle(_parent, { id, input }, { user }) {
       requireAgentOrAdmin(user);
       const db = getWriteDb();
       const row = updateKbArticle(db, user, id, input);
+      if (row.status === 'Published') {
+        await embedPublishedKbArticleNonFatal(row.id, row.title, row.body);
+      }
       return mapKbArticleGraphql(db, row);
     },
 
@@ -139,10 +180,11 @@ export const kbResolvers = {
       return mapKbArticleGraphql(db, row);
     },
 
-    publishKbArticle(_parent, { id }, { user }) {
+    async publishKbArticle(_parent, { id }, { user }) {
       requireAdmin(user);
       const db = getWriteDb();
       const row = adminPublishKbArticle(db, user, id);
+      await embedPublishedKbArticleNonFatal(row.id, row.title, row.body);
       return mapKbArticleGraphql(db, row);
     },
 
@@ -160,10 +202,11 @@ export const kbResolvers = {
       return mapKbArticleGraphql(db, row);
     },
 
-    restoreKbArticleVersion(_parent, { id, versionNumber }, { user }) {
+    async restoreKbArticleVersion(_parent, { id, versionNumber }, { user }) {
       requireAdmin(user);
       const db = getWriteDb();
       const row = restoreKbArticleVersion(db, user, id, versionNumber);
+      await embedPublishedKbArticleNonFatal(row.id, row.title, row.body);
       return mapKbArticleGraphql(db, row);
     },
 
