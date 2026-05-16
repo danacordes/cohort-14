@@ -59,9 +59,16 @@ function Dashboard() {
         />
         {(role === 'agent' || role === 'admin') && (
           <NavCard
-            label="Service desk queue"
-            description="Unassigned pool, filters, assignment"
-            onClick={() => navigate('/desk/queue')}
+            label="Closed ticket archive"
+            description="Search resolved history (read-only)"
+            onClick={() => navigate('/desk/archive')}
+          />
+        )}
+        {role === 'admin' && (
+          <NavCard
+            label="Closure & CSAT settings"
+            description="Auto-close window, surveys, holidays"
+            onClick={() => navigate('/desk/closure')}
           />
         )}
       </Stack>

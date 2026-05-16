@@ -61,6 +61,10 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
         continue;
       }
 
+      if (code === 'VALIDATION_ERROR') {
+        continue;
+      }
+
       store.dispatch(
         addError({ code: code ?? 'ERROR', message: 'Something went wrong. Please try again.' })
       );

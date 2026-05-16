@@ -44,6 +44,7 @@ export const TICKET_DETAIL = gql`
       publicNumber
       title
       description
+      submitterRef
       status
       priority
       assignedTo
@@ -52,8 +53,101 @@ export const TICKET_DETAIL = gql`
         name
       }
       resolutionSummary
+      resolvedAt
+      autoCloseAt
+      closedAt
+      closureNumber
       createdAt
       updatedAt
+    }
+  }
+`;
+
+export const TICKET_COMMENTS = gql`
+  query TicketComments($ticketId: ID!) {
+    ticketComments(ticketId: $ticketId) {
+      id
+      ticketId
+      body
+      isInternal
+      authorId
+      createdAt
+    }
+  }
+`;
+
+export const ADD_COMMENT = gql`
+  mutation AddComment($input: AddCommentInput!) {
+    addComment(input: $input) {
+      id
+      ticketId
+      body
+      isInternal
+      authorId
+      createdAt
+    }
+  }
+`;
+
+export const RESOLVE_TICKET = gql`
+  mutation ResolveTicket($ticketId: ID!, $resolutionSummary: String!) {
+    resolveTicket(ticketId: $ticketId, resolutionSummary: $resolutionSummary) {
+      id
+      status
+      resolutionSummary
+      resolvedAt
+      autoCloseAt
+      updatedAt
+    }
+  }
+`;
+
+export const CONFIRM_RESOLUTION = gql`
+  mutation ConfirmResolution($ticketId: ID!) {
+    confirmResolution(ticketId: $ticketId) {
+      id
+      status
+      closedAt
+      closureNumber
+      updatedAt
+    }
+  }
+`;
+
+export const CLOSE_TICKET = gql`
+  mutation CloseTicket($ticketId: ID!) {
+    closeTicket(ticketId: $ticketId) {
+      id
+      status
+      closedAt
+      closureNumber
+      updatedAt
+    }
+  }
+`;
+
+export const REOPEN_TICKET = gql`
+  mutation ReopenTicket($id: ID!) {
+    reopenTicket(id: $id) {
+      id
+      status
+      resolvedAt
+      autoCloseAt
+      closedAt
+      updatedAt
+    }
+  }
+`;
+
+export const SUBMIT_CSAT_RESPONSE = gql`
+  mutation SubmitCsatResponse($token: String!, $rating: Int!, $comment: String) {
+    submitCSATResponse(token: $token, rating: $rating, comment: $comment) {
+      id
+      ticketId
+      closureNumber
+      rating
+      comment
+      submittedAt
     }
   }
 `;

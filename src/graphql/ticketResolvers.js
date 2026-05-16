@@ -280,6 +280,7 @@ const Query = {
 
     const sortField = sort.field === 'priority' ? 'tp.sort_order'
       : sort.field === 'status' ? 'ts.sort_order'
+      : sort.field === 'updated_at' ? 't.updated_at'
       : 't.created_at';
     const sortDir = sort.direction === 'ASC' ? 'ASC' : 'DESC';
 

@@ -17,6 +17,9 @@ import TicketSubmitPage from './pages/tickets/TicketSubmitPage.jsx';
 import MyTicketsPage from './pages/tickets/MyTicketsPage.jsx';
 import TicketDetailPage from './pages/tickets/TicketDetailPage.jsx';
 import TicketQueuePage from './pages/tickets/TicketQueuePage.jsx';
+import ClosedTicketsArchivePage from './pages/desk/ClosedTicketsArchivePage.jsx';
+import ClosureConfigPage from './pages/desk/ClosureConfigPage.jsx';
+import CSATSurveyPage from './pages/survey/CSATSurveyPage.jsx';
 
 function App() {
   return (
@@ -24,6 +27,7 @@ function App() {
       <GlobalErrorDisplay />
       <Routes>
         {/* Public routes */}
+        <Route path="/survey/csat" element={<CSATSurveyPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/callback" element={<SsoCallbackPage />} />
 
@@ -136,6 +140,22 @@ function App() {
             element={
               <ErrorBoundary>
                 <TicketQueuePage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/desk/archive"
+            element={
+              <ErrorBoundary>
+                <ClosedTicketsArchivePage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/desk/closure"
+            element={
+              <ErrorBoundary>
+                <ClosureConfigPage />
               </ErrorBoundary>
             }
           />
