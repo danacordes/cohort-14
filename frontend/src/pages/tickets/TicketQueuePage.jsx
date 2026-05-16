@@ -26,6 +26,8 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { alpha, useTheme } from '@mui/material/styles';
 
+import SLAIndicator from '../../components/SLAIndicator.jsx';
+import { TICKET_POLL_INTERVAL_MS } from '../../constants/ticketPolling.js';
 import {
   AGENT_WORKLOAD,
   ASSIGN_TICKET,
@@ -145,6 +147,7 @@ export default function TicketQueuePage() {
     useQuery(QUEUE_TICKETS, {
       skip: deskDisabled,
       variables: queueVariables,
+      pollInterval: TICKET_POLL_INTERVAL_MS,
     });
 
   const { data: workloadData, refetch: refetchWorkload } = useQuery(AGENT_WORKLOAD, {
@@ -379,6 +382,7 @@ export default function TicketQueuePage() {
                   <TableCell>Title</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Priority</TableCell>
+                  <TableCell>SLA</TableCell>
                   <TableCell>Category</TableCell>
                   <TableCell>Assignee</TableCell>
                   <TableCell>Age</TableCell>
@@ -414,6 +418,9 @@ export default function TicketQueuePage() {
                         variant="outlined"
                         {...(t.priority === 'CRITICAL' ? { color: 'error' } : {})}
                       />
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <SLAIndicator dense {...t} />
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2">{t.category?.name ?? '—'}</Typography>

@@ -11,6 +11,8 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
 import { useSelector } from 'react-redux';
+import SLAIndicator from '../../components/SLAIndicator.jsx';
+import { TICKET_POLL_INTERVAL_MS } from '../../constants/ticketPolling.js';
 import { MY_TICKETS } from '../../graphql/tickets.js';
 import { selectRole } from '../../store/authSlice.js';
 
@@ -33,6 +35,7 @@ export default function MyTicketsPage() {
       pageSize: 25,
       sort: { field: 'created_at', direction: 'DESC' },
     },
+    pollInterval: TICKET_POLL_INTERVAL_MS,
   });
 
   const pageTitle =
@@ -89,6 +92,7 @@ export default function MyTicketsPage() {
                 <TableCell>Title</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Priority</TableCell>
+                <TableCell>SLA</TableCell>
                 <TableCell>Assignee</TableCell>
                 <TableCell>Updated</TableCell>
               </TableRow>
@@ -120,6 +124,9 @@ export default function MyTicketsPage() {
                   </TableCell>
                   <TableCell>
                     <Chip label={t.priority} size="small" variant="outlined" {...(t.priority === 'CRITICAL' ? { color: 'error' } : {})} />
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <SLAIndicator dense {...t} />
                   </TableCell>
                   <TableCell>
                     <AssigneeDisplay assignedTo={t.assignedTo} />

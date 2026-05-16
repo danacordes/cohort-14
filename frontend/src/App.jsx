@@ -19,6 +19,7 @@ import TicketDetailPage from './pages/tickets/TicketDetailPage.jsx';
 import TicketQueuePage from './pages/tickets/TicketQueuePage.jsx';
 import ClosedTicketsArchivePage from './pages/desk/ClosedTicketsArchivePage.jsx';
 import ClosureConfigPage from './pages/desk/ClosureConfigPage.jsx';
+import SLAConfigPage from './pages/desk/SLAConfigPage.jsx';
 import CSATSurveyPage from './pages/survey/CSATSurveyPage.jsx';
 
 function App() {
@@ -156,6 +157,14 @@ function App() {
             element={
               <ErrorBoundary>
                 <ClosureConfigPage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/desk/sla"
+            element={
+              <ErrorBoundary>
+                <SLAConfigPage />
               </ErrorBoundary>
             }
           />

@@ -25,6 +25,13 @@ export const MY_TICKETS = gql`
           status
           priority
           assignedTo
+          slaResponseDueAt
+          slaResolutionDueAt
+          slaPausedAt
+          slaStatus
+          slaRespondedAt
+          slaResponseBreachedAt
+          slaResolutionBreachedAt
           category {
             id
             name
@@ -57,6 +64,13 @@ export const TICKET_DETAIL = gql`
       autoCloseAt
       closedAt
       closureNumber
+      slaResponseDueAt
+      slaResolutionDueAt
+      slaPausedAt
+      slaStatus
+      slaRespondedAt
+      slaResponseBreachedAt
+      slaResolutionBreachedAt
       createdAt
       updatedAt
     }
@@ -190,6 +204,13 @@ export const QUEUE_TICKETS = gql`
           status
           priority
           assignedTo
+          slaResponseDueAt
+          slaResolutionDueAt
+          slaPausedAt
+          slaStatus
+          slaRespondedAt
+          slaResponseBreachedAt
+          slaResolutionBreachedAt
           category {
             id
             name

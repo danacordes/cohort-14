@@ -12,6 +12,8 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
+import SLAIndicator from '../../components/SLAIndicator.jsx';
+import { TICKET_POLL_INTERVAL_MS } from '../../constants/ticketPolling.js';
 import {
   ADD_COMMENT,
   CLOSE_TICKET,
@@ -66,6 +68,7 @@ export default function TicketDetailPage() {
   } = useQuery(TICKET_DETAIL, {
     variables: { id },
     skip: !id,
+    pollInterval: TICKET_POLL_INTERVAL_MS,
   });
 
   const {
@@ -238,7 +241,14 @@ export default function TicketDetailPage() {
             <Typography variant="caption" color="text.secondary">
               Last updated
             </Typography>
-            <Typography variant="body2">{t.updatedAt}</Typography>
+            <Typography variant="body2" gutterBottom>{t.updatedAt}</Typography>
+
+            <Typography variant="caption" color="text.secondary">
+              SLA
+            </Typography>
+            <Box sx={{ mt: 0.5 }}>
+              <SLAIndicator {...t} />
+            </Box>
           </Paper>
 
           {t.status === 'RESOLVED' && t.autoCloseAt && (

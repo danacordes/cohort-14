@@ -59,6 +59,13 @@ function Dashboard() {
         />
         {(role === 'agent' || role === 'admin') && (
           <NavCard
+            label="Service desk queue"
+            description="Unassigned pool, filters, assignment"
+            onClick={() => navigate('/desk/queue')}
+          />
+        )}
+        {(role === 'agent' || role === 'admin') && (
+          <NavCard
             label="Closed ticket archive"
             description="Search resolved history (read-only)"
             onClick={() => navigate('/desk/archive')}
@@ -69,6 +76,13 @@ function Dashboard() {
             label="Closure & CSAT settings"
             description="Auto-close window, surveys, holidays"
             onClick={() => navigate('/desk/closure')}
+          />
+        )}
+        {role === 'admin' && (
+          <NavCard
+            label="SLA settings"
+            description="Targets and escalation thresholds"
+            onClick={() => navigate('/desk/sla')}
           />
         )}
       </Stack>
