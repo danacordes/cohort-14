@@ -12,6 +12,7 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
+import AuditLogView from '../../components/AuditLogView.jsx';
 import SLAIndicator from '../../components/SLAIndicator.jsx';
 import { TICKET_POLL_INTERVAL_MS } from '../../constants/ticketPolling.js';
 import {
@@ -349,6 +350,8 @@ export default function TicketDetailPage() {
               </Button>
             </Paper>
           )}
+
+          {id && <AuditLogView entityType="Ticket" entityId={id} />}
 
           <Divider sx={{ my: 3 }} />
 
