@@ -41,4 +41,17 @@ Inline policy **`BedrockFoundationModelsInvoke`** in `infra/cohort14-infra.yaml`
 
 ## Downstream consumers
 
-Later classification / summarization / virtual-agent WOs should use `createLLMClient()`, call **`auditAiAction()`** when persisting AI-attributed mutations, and keep Bedrock outages **non-fatal** where the blueprint requires it.
+**WO #37 — Ticket Classification & Summarization API**
+
+| Path / surface | Responsibility |
+|----------------|----------------|
+| `src/constants/embeddingEntities.js` | `EMBEDDING_ENTITY_TICKET` slice key for cosine retrieval. |
+| `src/services/ai/llmSingleton.js` | One `createLLMClient()` per Node process (`getSharedLLMClient()`). |
+| `src/services/ai/ticketEmbedding.js` | `persistTicketEmbeddingNonFatal()` after ticket text changes — logs JSON warn on embed failure only. |
+| `src/services/ai/ticketClassificationService.js` | Few-shot RAG + Claude JSON `{ categoryId, categoryName, confidence }`, validated against `ticket_category`. |
+| `src/services/ai/summarizationService.js` | `buildTicketThreadDigest()` / `summarizeTicketThread()` for agent handoff summaries (callable from future KB promote flows). |
+| GraphQL | `Query.suggestTicketCategory`, `Query.summarizeTicket`, `Mutation.updateTicketDetails`; `createTicket` refresh embedding blob after persist. |
+
+---
+
+Earlier foundation note: callers should use `createLLMClient()` indirectly via **`getSharedLLMClient()`**, call **`auditAiAction()`** when persisting AI-attributed mutations, and keep Bedrock outages **non-fatal** where the blueprint requires it.

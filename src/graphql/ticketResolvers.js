@@ -51,6 +51,10 @@ import {
   ForbiddenError,
   ValidationError,
 } from '../errors/index.js';
+import { getSharedLLMClient } from '../services/ai/llmSingleton.js';
+import { persistTicketEmbeddingNonFatal } from '../services/ai/ticketEmbedding.js';
+import { suggestTicketCategoryFromText } from '../services/ai/ticketClassificationService.js';
+import { summarizeTicketThread } from '../services/ai/summarizationService.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -432,6 +436,51 @@ const Query = {
       unassignedEscalationThresholdHours: global?.unassigned_escalation_threshold_hours ?? 4,
     };
   },
+
+  async suggestTicketCategory(_parent, { title, description = '' }, { user }) {
+    requireRole(user, 'agent', 'admin');
+    try {
+      const llm = getSharedLLMClient();
+      return await suggestTicketCategoryFromText(llm, getReadDb(), title, description);
+    } catch (err) {
+      const msg =
+        typeof err === 'object' && err !== null && 'message' in err
+          ? String(/** @type {{ message?: unknown }} */ (err).message)
+          : String(err);
+      console.error(
+        JSON.stringify({
+          level: 'warn',
+          msg: 'suggest_ticket_category_failed',
+          error: msg.slice(0, 500),
+        })
+      );
+      return null;
+    }
+  },
+
+  async summarizeTicket(_parent, { ticketId }, { user }) {
+    requireRole(user, 'agent', 'admin');
+    const db = getReadDb();
+    getTicketOrThrow(db, ticketId);
+    try {
+      const text = await summarizeTicketThread(getSharedLLMClient(), db, ticketId);
+      return text || null;
+    } catch (err) {
+      const msg =
+        typeof err === 'object' && err !== null && 'message' in err
+          ? String(/** @type {{ message?: unknown }} */ (err).message)
+          : String(err);
+      console.error(
+        JSON.stringify({
+          level: 'warn',
+          msg: 'summarize_ticket_failed',
+          ticketId,
+          error: msg.slice(0, 500),
+        })
+      );
+      return null;
+    }
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -439,7 +488,7 @@ const Query = {
 // ---------------------------------------------------------------------------
 
 const Mutation = {
-  createTicket(_parent, { input }, { user }) {
+  async createTicket(_parent, { input }, { user }) {
     requireAuth(user);
     const { title, description = '', priority = 'MEDIUM', categoryId = null, attachments = [] } = input;
 
@@ -491,6 +540,14 @@ const Mutation = {
     }
 
     const ticket = getTicketOrThrow(db, id);
+
+    await persistTicketEmbeddingNonFatal(
+      db,
+      getSharedLLMClient(),
+      id,
+      ticket.title ?? title.trim(),
+      ticket.description ?? description ?? ''
+    );
 
     dispatch(Events.TICKET_CREATED, {
       ticketId: id,
@@ -611,6 +668,42 @@ const Mutation = {
       previousValues: priorSLAState,
       newValues: { priority, slaResponseDueAt: responseDue, slaResolutionDueAt: resolutionDue },
     });
+
+    return mapTicket(getTicketOrThrow(db, id));
+  },
+
+  async updateTicketDetails(_parent, { id, title, description }, { user }) {
+    requireRole(user, 'agent', 'admin');
+    if (title === undefined && description === undefined) {
+      throw new ValidationError('Provide title and/or description to update');
+    }
+    const db = getWriteDb();
+    const ticket = getTicketOrThrow(db, id);
+
+    let nextTitle = ticket.title ?? '';
+    if (title !== undefined) {
+      const trimmed = String(title).trim();
+      if (!trimmed) throw new ValidationError('Title cannot be empty');
+      nextTitle = trimmed;
+    }
+
+    const nextDesc =
+      description === undefined ? (ticket.description ?? '') : (description ?? '');
+
+    db.prepare(
+      `UPDATE ticket SET title = ?, description = ?, updated_at = datetime('now') WHERE id = ?`
+    ).run(nextTitle, nextDesc, id);
+
+    audit(db, {
+      entityType: 'Ticket',
+      entityId: id,
+      action: 'details_updated',
+      actorId: user.id,
+      previousValues: { title: ticket.title, description: ticket.description ?? '' },
+      newValues: { title: nextTitle, description: nextDesc },
+    });
+
+    await persistTicketEmbeddingNonFatal(db, getSharedLLMClient(), id, nextTitle, nextDesc);
 
     return mapTicket(getTicketOrThrow(db, id));
   },

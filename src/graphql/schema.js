@@ -115,6 +115,15 @@ export const typeDefs = `#graphql
     storageKey: String!
   }
 
+  # ─── Ticket AI (classification / summarization) ────────────────────────────
+
+  type CategorySuggestion {
+    categoryId: ID!
+    categoryName: String!
+    """Confidence between 0 and 1 surfaced for REQ-AI-003."""
+    confidence: Float!
+  }
+
   # ─── SLA Config ───────────────────────────────────────────────────────────
 
   type SLAPolicy {
@@ -300,6 +309,15 @@ export const typeDefs = `#graphql
     ticketAttachments(ticketId: ID!): [TicketAttachment!]!
     agentWorkload: [WorkloadSummary!]!
     ticketComments(ticketId: ID!): [TicketComment!]!
+    """
+    Few-shot similarity + LLM category suggestion (WO #37). Agents/admins only. Null when AI unavailable or malformed model output — non-fatal per ADR-003.
+    """
+    suggestTicketCategory(title: String!, description: String): CategorySuggestion
+    """
+    Compact thread digest for handoff (WO #37). Agents/admins only. Null on LLM failure — non-fatal.
+    """
+    summarizeTicket(ticketId: ID!): String
+
     closureConfig: ClosureConfig!
     holidays: [Holiday!]!
     slaConfig: SLAPolicyConfig!
@@ -315,6 +333,8 @@ export const typeDefs = `#graphql
       resolutionSummary: String
     ): Ticket!
     updateTicketPriority(id: ID!, priority: TicketPriorityEnum!): Ticket!
+    """Agent/admin: update title/description; refreshes search embedding blob when successful."""
+    updateTicketDetails(id: ID!, title: String, description: String): Ticket!
     updateTicketCategory(id: ID!, categoryId: ID): Ticket!
     """Apply a human correction over an AI suggestion or routing decision; records `ai_action_overridden` in the audit trail."""
     overrideTicketAiAction(input: OverrideTicketAiInput!): Ticket!
