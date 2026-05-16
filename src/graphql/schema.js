@@ -295,6 +295,114 @@ export const typeDefs = `#graphql
     coverageGaps: [KBCoverageGapStat!]!
   }
 
+  # ─── Knowledge Base article management (WO-13) ────────────────────────────
+
+  enum KBFeedbackRating {
+    HELPFUL
+    NOT_HELPFUL
+  }
+
+  input KBAttachmentInput {
+    filename: String!
+    mimeType: String!
+    storageKey: String!
+    extractedText: String
+  }
+
+  input CreateKbArticleInput {
+    categoryId: ID!
+    """Must be Solution | How-To Guide | Known Error | FAQ."""
+    articleType: String!
+    title: String
+    body: String
+    tags: [String!]
+    expiresAt: String
+    reviewDueAt: String
+    attachments: [KBAttachmentInput!]
+  }
+
+  input UpdateKbArticleInput {
+    categoryId: ID
+    articleType: String
+    title: String
+    body: String
+    tags: [String!]
+    expiresAt: String
+    reviewDueAt: String
+    attachments: [KBAttachmentInput!]
+  }
+
+  type KBUserEmailRef {
+    id: ID!
+    email: String!
+  }
+
+  type KBCategoryRef {
+    id: ID!
+    name: String!
+  }
+
+  type KBArticleFile {
+    id: ID!
+    filename: String!
+    mimeType: String!
+    extractedText: String
+    uploadedBy: ID!
+    uploadedAt: String!
+  }
+
+  type KBArticleVersion {
+    id: ID!
+    articleId: ID!
+    versionNumber: Int!
+    title: String!
+    body: String!
+    tags: [String!]!
+    editorId: ID!
+    editorEmail: String
+    createdAt: String!
+  }
+
+  type KBFeedbackUpsertPayload {
+    helpfulCount: Int!
+    notHelpfulCount: Int!
+    """True when article was auto-flagged for review per threshold."""
+    flaggedForReview: Boolean!
+    feedbackFlagThreshold: Int!
+  }
+
+  type KBTicketKbLink {
+    articleId: ID!
+    number: String!
+    title: String!
+    status: String!
+    linkedAt: String!
+  }
+
+  type KBArticle {
+    id: ID!
+    number: String!
+    title: String!
+    body: String!
+    articleType: String!
+    status: String!
+    category: KBCategoryRef!
+    tags: [String!]!
+    author: KBUserEmailRef
+    reviewer: KBUserEmailRef
+    reviewDueAt: String
+    expiresAt: String
+    flaggedForReview: Boolean!
+    lastReviewComment: String
+    currentVersion: Int!
+    helpfulCount: Int!
+    notHelpfulCount: Int!
+    feedbackFlagThreshold: Int!
+    createdAt: String!
+    updatedAt: String!
+    attachments: [KBArticleFile!]!
+  }
+
   # ─── Ticket ───────────────────────────────────────────────────────────────
 
   type Ticket {
@@ -323,6 +431,7 @@ export const typeDefs = `#graphql
     closureNumber: Int!
     attachments: [TicketAttachment!]!
     comments: [TicketComment!]!
+    linkedKbArticles: [KBTicketKbLink!]!
   }
 
   type TicketEdge {
@@ -395,6 +504,9 @@ export const typeDefs = `#graphql
     kbSearch(query: String!, filters: KBSearchFilters, page: PaginationInput): KBSearchResultPage!
     kbAdminMetrics(period: String!): KBAdminMetricsPayload!
 
+    kbArticle(id: ID!): KBArticle
+    kbArticleVersions(id: ID!): [KBArticleVersion!]!
+
     closureConfig: ClosureConfig!
     holidays: [Holiday!]!
     slaConfig: SLAPolicyConfig!
@@ -413,7 +525,7 @@ export const typeDefs = `#graphql
     """Agent/admin: update title/description; refreshes search embedding blob when successful."""
     updateTicketDetails(id: ID!, title: String, description: String): Ticket!
     updateTicketCategory(id: ID!, categoryId: ID): Ticket!
-    """Apply a human correction over an AI suggestion or routing decision; records `ai_action_overridden` in the audit trail."""
+    """Apply a human correction over an AI suggestion or routing decision; records ai_action_overridden in the audit trail."""
     overrideTicketAiAction(input: OverrideTicketAiInput!): Ticket!
     reopenTicket(id: ID!): Ticket!
 
@@ -438,6 +550,21 @@ export const typeDefs = `#graphql
     removeHoliday(id: ID!): Boolean!
 
     updateSLAConfig(input: SLAPolicyConfigInput!): SLAPolicyConfig!
+
+    createKbArticle(input: CreateKbArticleInput!): KBArticle!
+    updateKbArticle(id: ID!, input: UpdateKbArticleInput!): KBArticle!
+    submitKbArticleForReview(id: ID!, reviewerId: ID): KBArticle!
+    rejectKbArticle(id: ID!, comment: String!): KBArticle!
+    """Admin: publish Draft or PendingReview bypassing reviewer queue."""
+    publishKbArticle(id: ID!): KBArticle!
+    retireKbArticle(id: ID!): KBArticle!
+    archiveKbArticle(id: ID!): KBArticle!
+    restoreKbArticleVersion(id: ID!, versionNumber: Int!): KBArticle!
+
+    kbArticleFeedback(articleId: ID!, rating: KBFeedbackRating!): KBFeedbackUpsertPayload!
+    linkKbArticleToTicket(ticketId: ID!, articleId: ID!): Boolean!
+    unlinkKbArticleFromTicket(ticketId: ID!, articleId: ID!): Boolean!
+    setKbFeedbackFlagThreshold(threshold: Int!): Int!
   }
 `;
 
@@ -445,6 +572,7 @@ export const typeDefs = `#graphql
 
 export const resolvers = {
   Query: { ...ticketResolvers.Query, ...kbResolvers.Query },
-  Mutation: { ...ticketResolvers.Mutation },
+  Mutation: { ...ticketResolvers.Mutation, ...kbResolvers.Mutation },
   Ticket: ticketResolvers.Ticket,
+  KBArticle: kbResolvers.KBArticle,
 };

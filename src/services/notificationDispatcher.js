@@ -15,6 +15,10 @@ export const Events = {
   TICKET_PRIORITY_CHANGED: 'ticket.priority_changed',
   TICKET_RESOLVED: 'ticket.resolved',
   TICKET_CLOSED: 'ticket.closed',
+
+  KB_ARTICLE_TICKET_LINK_STALE: 'kb.article_ticket_link_stale',
+  KB_ARTICLE_REJECTED_FOR_AUTHOR: 'kb.article_rejected_for_author',
+  KB_ARTICLE_REVIEW_DUE: 'kb.article_review_due',
 };
 
 const isDev = process.env.NODE_ENV !== 'production';

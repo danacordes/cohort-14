@@ -9,6 +9,7 @@ import { typeDefs, resolvers } from './graphql/schema.js';
 import authRouter from './routes/auth.js';
 import { authMiddleware } from './middleware/auth.js';
 import { start as startAutoClose } from './services/autoCloseScheduler.js';
+import { start as startKbScheduler } from './services/kbScheduler.js';
 
 const isDev = process.env.NODE_ENV !== 'production';
 const PORT = process.env.PORT ?? 4000;
@@ -78,6 +79,7 @@ app.use(
 );
 
 const autoClose = startAutoClose();
+const kbScheduler = startKbScheduler();
 
 const server = app.listen(PORT, () => {
   if (isDev) {
@@ -101,6 +103,7 @@ function shutdown(signal) {
   }
   server.close(() => {
     autoClose.stop();
+    kbScheduler.stop();
     closeAll();
     process.exit(0);
   });

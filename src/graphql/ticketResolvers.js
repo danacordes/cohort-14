@@ -55,6 +55,7 @@ import { getSharedLLMClient } from '../services/ai/llmSingleton.js';
 import { persistTicketEmbeddingNonFatal } from '../services/ai/ticketEmbedding.js';
 import { suggestTicketCategoryFromText } from '../services/ai/ticketClassificationService.js';
 import { summarizeTicketThread } from '../services/ai/summarizationService.js';
+import { mapTicketKbLinksForGraphql } from './kbResolvers.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1291,6 +1292,11 @@ const Ticket = {
       authorId: r.author_id,
       createdAt: r.created_at,
     }));
+  },
+
+  linkedKbArticles(parent) {
+    const db = getReadDb();
+    return mapTicketKbLinksForGraphql(db, parent.id);
   },
 };
 
